@@ -1,0 +1,90 @@
+version: "2"
+
+linters:
+  # Defaults (errcheck, govet, ineffassign, staticcheck, unused) plus the
+  # linters that enforce a specific rule in CLAUDE.md.
+  enable:
+    - depguard # §Architecture: infra must not import domain
+    - errname # §Guiding principles: sentinels are named Err…
+    - errorlint # §Guiding principles: wrap with %w, compare with errors.Is
+    - exhaustive # §Guiding principles: branch exhaustively on typed constants
+    - forbidigo # §Logging conventions and testing skill: banned call sites
+    - funlen # §Guiding principles: the ~50 LOC ceiling
+    - gochecknoglobals # §Guiding principles: no exported mutable globals
+    - gochecksumtype # §Guiding principles: same as exhaustive, sealed interfaces
+    - misspell # spelling, in comments and strings alike
+    - nakedret # §Guiding principles: no naked returns
+    - revive # §Guiding principles: doc comments, ctx first
+    - sloglint # §Logging conventions: structured key/value form
+    - thelper # testing skill: t.Helper() in shared assertion helpers
+    - usetesting # testing skill: t.TempDir() over os.MkdirTemp
+
+  settings:
+    depguard:
+      rules:
+        imperative-shell:
+          files:
+            - "**/internal/infra/**"
+          deny:
+            - pkg: github.com/dragonwasrobot/xdg-housekeeper/internal/domain
+              desc: the imperative shell must not import the pure core
+
+    errcheck:
+      # Never `_ = err` — a discarded error is still an unhandled one.
+      check-blank: true
+
+    exhaustive:
+      # A default clause must not excuse missing cases: adding a variant should
+      # break every switch that ignores it.
+      default-signifies-exhaustive: false
+
+    forbidigo:
+      # Resolve the call's package by type, so a local named `log` is not
+      # mistaken for the stdlib one.
+      analyze-types: true
+      forbid:
+        - pattern: ^log\.[A-Z].*$
+          pkg: ^log$
+          msg: use log/slog for diagnostics
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: write to os.Stdout or os.Stderr explicitly
+        - pattern: ^reflect\.DeepEqual$
+          msg: diff whole values with cmp.Diff, which shows which field moved
+
+    funlen:
+      # The soft ceiling from §Guiding principles, made hard. Lines only:
+      # statement count is a different measure and wants a different threshold.
+      lines: 50
+      statements: -1
+      ignore-comments: true
+
+    gochecksumtype:
+      # Same policy for sealed interfaces. Note the check only applies to an
+      # interface carrying the //sumtype:decl directive.
+      default-signifies-exhaustive: false
+
+    nakedret:
+      # Any naked return, in a function of any length.
+      max-func-lines: 0
+
+    revive:
+      rules:
+        - name: context-as-argument
+        - name: exported
+        - name: package-comments
+
+    sloglint:
+      # A constant message, then the dynamic values as key/value attributes.
+      kv-only: true
+      static-msg: true
+
+  exclusions:
+    rules:
+      # A table-driven test is mostly rows; length there is not complexity.
+      - path: _test\.go
+        linters:
+          - funlen
+
+formatters:
+  enable:
+    - gofmt
