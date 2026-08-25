@@ -1,0 +1,9 @@
+# dot-gitignore
+
+# compiled
+/bin/
+/dist/
+
+# tests
+*.test
+*.out
