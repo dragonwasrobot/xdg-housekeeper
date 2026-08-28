@@ -45,6 +45,9 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   defines: `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
   `XDG_CACHE_HOME`. Each variable specifies the *base directory* of one
   *location*.
+- **environment**: the raw values every *base directory* is resolved from:
+  `HOME`, which gives *home*, plus the four *XDG variables*. An empty value
+  stands for a variable that is not set.
 - **location**: the XDG *base directory* an *entry* belongs in: config, data,
   state, or cache.
 - **base directory**: the absolute directory one *location* resolves to. This is

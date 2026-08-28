@@ -1,6 +1,6 @@
 ---
 name: feature
-description: The test-first TDD cycle (Red → Green → Blue) for new functionality in this repo. Load before writing any code for a new feature, behavior, or capability — and when resuming a cycle already in progress. Covers the numbered cycle, the four verification commands, what the loop forbids, and the handoff to use when unit tests aren't possible.
+description: The test-first TDD cycle (Red → Green → Blue) for new functionality in this repo. Load before writing any code for a new feature, behavior, or capability — and when resuming a cycle already in progress. Covers the numbered cycle, the verification step, what the loop forbids, and the handoff to use when unit tests aren't possible.
 ---
 
 # Feature workflow
@@ -28,22 +28,24 @@ The cycle for each behavior:
    immediately, with no code change.
 5. Review the diff against the **Guiding principles** in `CLAUDE.md` (**Blue**)
    — a judgment review, not a tool run. Common targets: a missing doc comment on
-   a new exported identifier, an error wrapped with `%v` instead of `%w` or
-   returned without context, a bare `any`, a primitive standing in for a domain
-   type, functions approaching the ~50 LOC ceiling, an unnamed multi-clause
-   conditional, declaration order, whitespace. Refactor before moving on.
-6. **Verification** — run all four before moving on:
+   a new exported identifier, an error wrapped with `%v` where its identity
+   needed to survive or returned without context, a bare `any`, a primitive
+   standing in for a domain type, functions approaching the ~40 LOC ceiling, an
+   unnamed multi-clause conditional, declaration order, whitespace. Refactor
+   before moving on.
+6. **Verification** — run this before moving on:
 
    ```sh
-   mise exec -- gofmt -l .
-   mise exec -- go vet ./...
-   mise exec -- golangci-lint run
-   mise exec -- go test ./...
+   mise run verify
    ```
 
-   `gofmt -l` printing any filename is a failure, even though it exits zero. A
-   green suite confirms the mechanics, not the Blue review — it is no substitute
-   for step 5.
+   It runs `go vet`, `golangci-lint` (gofmt included), and `go test`, stopping
+   at the first failure. A green suite confirms the mechanics, not the Blue
+   review — it is no substitute for step 5.
+
+   A Stop hook runs the same command when the tree has Go changes, so a
+   blocked stop means the diff is not ready. It checks a chain only once, so
+   it does not replace this step.
 7. **Stop and hand the diff back.** End the turn so the developer reads the
    cycle's diff before the next one starts. Never begin the next test in the
    same response.

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# PostToolUse(Write|Edit) adapter: keep Markdown to 80 columns as it is written.
+#
+# Triggers on any Markdown writes under the project root, tracked or not, in
+# contrast to `mise run verify`.
+#
+# Silence means clean. Exit 2 hands the violation back to Claude.
+#
+# Example:
+#
+# echo '{"tool_input":{"file_path":"'$PWD'/PLAN.md"}}' | .claude/hooks/doc-width
+
+set -uo pipefail
+
+root="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+# The hook payload arrives as JSON on stdin. Matches "$root/" rather than
+# "$root", so a sibling checkout such as another git worktree is not triggered.
+file=$(jq -r --arg root "$root" '
+  .tool_input.file_path // empty
+  | select(startswith($root + "/") and endswith(".md"))
+')
+
+[ -n "$file" ] || exit 0
+
+# `check-doc-width` reports on `stdout`; the hook protocol reads `stderr`.
+"$root/scripts/check-doc-width" "$file" >&2 || exit 2

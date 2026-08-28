@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#
+# Stop adapter: never hand back a diff that has not been verified.
+#
+# The feature and refactor skills both end by running `mise run verify`. This
+# ensures `mise run verify` is run once when handing back to the user.
+#
+# Silence means clean. Exit 2 blocks the stop and hands the violation back.
+#
+# Example:
+#
+# echo '{}' | .claude/hooks/verify
+
+set -uo pipefail
+
+root="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+# The `stop_hook_active` flag is only set once per turn in a session with the
+# result that the hook checks a chain only once; a fix made in response to this
+# hook is not re-verified by it.
+stop_hook_active=$(jq -r '.stop_hook_active // false')
+
+[ "$stop_hook_active" = "true" ] && exit 0
+
+# Enforces that a check that could not run triggers an error.
+cd "$root" || exit 2
+
+# The `-uall` flag ensures that all untracked paths are expanded.
+go_changes=$(git status --porcelain -uall -- '*.go')
+
+[ -n "$go_changes" ] || exit 0
+
+out=$(mise run verify 2>&1)
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  printf '%s\n' "$out" >&2
+  exit 2
+fi
