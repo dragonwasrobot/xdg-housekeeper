@@ -1,0 +1,56 @@
+#!/usr/bin/env perl
+#
+# Flags Markdown prose lines wider than 80 characters, so a doc stays readable
+# in a terminal beside the code it describes.
+#
+# Three exemptions, all of them lines that cannot be rewrapped. A fenced code
+# block is quoted as it is written; the architecture tree and the
+# `ErrInvalidTarget` declaration in `CLAUDE.md` both sit past the limit for that
+# reason. A table row carries its own layout. YAML frontmatter is a single-line
+# field by format.
+
+use strict;
+use warnings;
+use open qw(:std :encoding(UTF-8));
+
+my $limit = 80;
+my $failed = 0;
+
+for my $path (@ARGV) {
+    open my $doc, '<', $path or die "check-doc-width: open $path: $!\n";
+
+    my $fenced = 0;
+    my $frontmatter = 0;
+
+    while (my $line = <$doc>) {
+        chomp $line;
+
+        if ($. == 1 && $line eq '---') {
+            $frontmatter = 1;
+            next;
+        }
+
+        if ($frontmatter) {
+            $frontmatter = 0 if $line eq '---';
+            next;
+        }
+
+        if ($line =~ /^\s*```/) {
+            $fenced = !$fenced;
+            next;
+        }
+
+        next if $fenced;
+        next if $line =~ /^\s*\|/;
+
+        my $width = length $line;
+        next if $width <= $limit;
+
+        printf "%s:%d: %d characters\n", $path, $., $width;
+        $failed = 1;
+    }
+
+    close $doc;
+}
+
+exit($failed ? 1 : 0);

@@ -6,18 +6,20 @@ linters:
   enable:
     - depguard # §Architecture: infra must not import domain
     - errname # §Guiding principles: sentinels are named Err…
-    - errorlint # §Guiding principles: wrap with %w, compare with errors.Is
+    - errorlint # §Guiding principles: wrapping verb, compare with errors.Is
     - exhaustive # §Guiding principles: branch exhaustively on typed constants
     - forbidigo # §Logging conventions and testing skill: banned call sites
-    - funlen # §Guiding principles: the ~50 LOC ceiling
-    - gochecknoglobals # §Guiding principles: no exported mutable globals
+    - funlen # §Guiding principles: the ~40 LOC ceiling
+    - gochecknoglobals # §Guiding principles: no mutable globals, Err… excepted
     - gochecksumtype # §Guiding principles: same as exhaustive, sealed interfaces
+    - lll # §Guiding principles: the 80-column ceiling
     - misspell # spelling, in comments and strings alike
     - nakedret # §Guiding principles: no naked returns
     - revive # §Guiding principles: doc comments, ctx first
     - sloglint # §Logging conventions: structured key/value form
     - thelper # testing skill: t.Helper() in shared assertion helpers
     - usetesting # testing skill: t.TempDir() over os.MkdirTemp
+    - wsl_v5 # §Guiding principles: let code breathe, defaults match the rule
 
   settings:
     depguard:
@@ -30,7 +32,7 @@ linters:
               desc: the imperative shell must not import the pure core
 
     errcheck:
-      # Never `_ = err` — a discarded error is still an unhandled one.
+      # Never `_ = err`; a discarded error is still an unhandled one.
       check-blank: true
 
     exhaustive:
@@ -54,7 +56,7 @@ linters:
     funlen:
       # The soft ceiling from §Guiding principles, made hard. Lines only:
       # statement count is a different measure and wants a different threshold.
-      lines: 50
+      lines: 40
       statements: -1
       ignore-comments: true
 
@@ -62,6 +64,12 @@ linters:
       # Same policy for sealed interfaces. Note the check only applies to an
       # interface carrying the //sumtype:decl directive.
       default-signifies-exhaustive: false
+
+    lll:
+      # The same 80 the Markdown checker holds prose to. A tab counts as one
+      # character; raise tab-width if the code is read at a wider setting.
+      line-length: 80
+      tab-width: 1
 
     nakedret:
       # Any naked return, in a function of any length.
@@ -84,6 +92,18 @@ linters:
       - path: _test\.go
         linters:
           - funlen
+
+      # A test's name is its sentence, and a func declaration cannot wrap
+      # without mangling it. Test bodies stay held to the limit.
+      - path: _test\.go
+        source: ^func Test
+        linters:
+          - lll
+
+issues:
+  # Every finding on a line, not just the first; the default hides the second
+  # until the first is fixed.
+  uniq-by-line: false
 
 formatters:
   enable:
