@@ -2,11 +2,35 @@
 go = "1.26.6"
 golangci-lint = "2.12.2"
 
+[tasks.vet]
+description = "Report suspicious constructs the compiler accepts"
+run = 'go vet ./...'
+
+[tasks.lint]
+description = "Enforce the CLAUDE.md rules a linter can catch"
+run = 'golangci-lint run' # also runs gofmt as one of its linters
+
+[tasks.build]
+description = "Compile every package"
+run = 'go build ./...'
+
+[tasks.test]
+description = "Run the test suite"
+run = 'go test ./...'
+
+[tasks.doc-width]
+description = "Hold Markdown prose to 80 columns"
+run = 'git ls-files -z "*.md" | xargs -0 ./scripts/check-doc-width'
+
+# A `run` list is sequential and stops at the first failure. `depends` would
+# not: it defaults to `--jobs 4`, interleaving the output of checks meant to be
+# read in order.
 [tasks.verify]
 description = "Every check a change must pass"
 run = [
-  'go vet ./...',
-  'golangci-lint run', # also runs gofmt as one of its linters
-  'go test ./...',
-  'git ls-files -z "*.md" | xargs -0 ./scripts/check-doc-width',
+  'mise run vet',
+  'mise run lint',
+  'mise run build',
+  'mise run test',
+  'mise run doc-width',
 ]

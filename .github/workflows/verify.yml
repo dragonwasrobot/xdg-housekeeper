@@ -1,0 +1,29 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout and install tool dependencies. See `mise.toml`.
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+
+      # Unnamed on purpose: GitHub labels each step with its `run` command,
+      # which already reads as the name of the check.
+      - run: mise run build # caches build artifacts for remaining steps.
+      - run: mise run vet
+      - run: mise run lint
+      - run: mise run test
+      - run: mise run doc-width
