@@ -3,11 +3,13 @@
 # Flags Markdown prose lines wider than 80 characters, so a doc stays readable
 # in a terminal beside the code it describes.
 #
-# Three exemptions, all of them lines that cannot be rewrapped. A fenced code
+# Four exemptions, all of them lines that cannot be rewrapped. A fenced code
 # block is quoted as it is written; the architecture tree and the
 # `ErrInvalidTarget` declaration in `CLAUDE.md` both sit past the limit for that
 # reason. A table row carries its own layout. YAML frontmatter is a single-line
-# field by format.
+# field by format. A link reference definition is a label and a URL, and a URL
+# has no break point — which is why a long link is written in that form here,
+# keeping the prose that refers to it inside the limit.
 
 use strict;
 use warnings;
@@ -41,7 +43,8 @@ for my $path (@ARGV) {
         }
 
         next if $fenced;
-        next if $line =~ /^\s*\|/;
+        next if $line =~ /^\s*\|/;                 # table
+        next if $line =~ /^\s*\[[^\]]+\]:\s+\S+$/; # link
 
         my $width = length $line;
         next if $width <= $limit;
