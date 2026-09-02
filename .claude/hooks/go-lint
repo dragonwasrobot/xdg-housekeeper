@@ -1,47 +1,67 @@
 #!/usr/bin/env bash
 #
-# PostToolUse(Write|Edit) adapter: lint the edited file's package as it is
-# written.
+# PostToolBatch adapter: lint every package the batch wrote to, as written.
 #
 # Triggers on any Go writes under the project root, tracked or not, in
 # contrast to `mise run verify`.
 #
-# Scoped to run on the enclosing package so `golangci-lint` only costs ~0.3s.
+# Scoped to the enclosing packages so `golangci-lint` only costs ~0.3s each,
+# and a package is linted once however many of its files the batch wrote.
 #
 # The `scratchpad/` folder is skipped deliberately: `CLAUDE.md` keeps probes
 # there that are *meant* to trip a linter.
 #
-# Silence means clean. Exit 2 hands the violation back to Claude.
+# The event takes no matcher, so the jq below is the only filter.
+#
+# Silence means clean. Exit 2 stops the agentic loop before the next model
+# call.
 #
 # Example:
 #
-# echo '{"tool_input":{"file_path":"'$PWD'/*/plan.go"}}' | .claude/hooks/go-lint
+# printf '{ "tool_calls": [
+#           { "tool_name": "Edit",
+#             "tool_input": {
+#               "file_path": "%s/main.go"
+#             }
+#           }
+#         ]}' "$PWD" | .claude/hooks/go-lint
 
 set -uo pipefail
 
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
 
-# The hook payload arrives as JSON on stdin. Matches "$root/" rather than
-# "$root", so a sibling checkout such as another git worktree is not triggered.
-file=$(jq -r --arg root "$root" '
-  .tool_input.file_path // empty
+# The batch payload arrives as JSON on stdin, carrying every call in the batch.
+# Matches "$root/" rather than "$root", so a sibling checkout such as another
+# git worktree is not triggered. The closing `sub` drops the file name to leave
+# the package directory.
+packages=$(jq -r --arg root "$root" '
+  .tool_calls[]
+  | select(.tool_name == "Write" or .tool_name == "Edit")
+  | .tool_input.file_path // empty
   | select(startswith($root + "/") and endswith(".go"))
   | select(startswith($root + "/scratchpad/") | not)
-')
+  | sub("/[^/]+$"; "")
+' | sort -u)
 
-[ -n "$file" ] || exit 0
+[ -n "$packages" ] || exit 0
 
 # Enforces that a check that could not run triggers an error.
 cd "$root" || exit 2
 
-package_dir=$(dirname "$file")
+# Accumulated rather than exited on, so one broken package cannot hide a second
+# one written by the same batch.
+exit_status=0
 
-# Check on the exit code rather than raw output from `golangci-lint` and merges
-# both `stdout` and `stderr` output to `out`.
-out=$(mise exec -- golangci-lint run "$package_dir" 2>&1)
-status=$?
+while IFS= read -r package_dir; do
+  # Check on the exit code rather than raw output from `golangci-lint` and
+  # merges both `stdout` and `stderr` output to `out`.
+  out=$(mise exec -- golangci-lint run "$package_dir" 2>&1)
+  status=$?
 
-if [ "$status" -ne 0 ]; then
-  printf '%s\n' "$out" >&2
-  exit 2
-fi
+  if [ "$status" -ne 0 ]; then
+    printf '%s\n' "$out" >&2
+    exit_status=2
+  fi
+done <<<"$packages"
+
+exit "$exit_status"

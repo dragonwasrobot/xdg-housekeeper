@@ -9,11 +9,17 @@
             "command": "\"${CLAUDE_PROJECT_DIR:-$PWD}/.claude/hooks/doc-width\"",
             "statusMessage": "Checking doc width",
             "timeout": 10
-          },
+          }
+        ]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$PWD}/.claude/hooks/go-lint\"",
-            "statusMessage": "Linting package",
+            "statusMessage": "Linting packages",
             "timeout": 60
           }
         ]
