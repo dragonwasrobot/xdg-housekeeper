@@ -271,8 +271,10 @@ const (
 ```
 
 Variants carrying differing payloads get a sealed interface, closed by an
-unexported method. Each one holds the `Candidate` it acts on rather than
-respelling that type's fields:
+unexported method. Give each variant exactly the fields that case has, under
+the names the domain language already uses — `EntryPath` is `Entry.Path`,
+`Target` is `Candidate.Target` — never a fresh `From`/`To` pair for a path
+named elsewhere:
 
 ```go
 // The directive is what makes gochecksumtype check switches over it — a
@@ -281,26 +283,35 @@ respelling that type's fields:
 //sumtype:decl
 type Action interface{ isAction() }
 
-// Move relocates the candidate's entry to its target, leaving nothing behind.
+// Move relocates the entry to its target, leaving nothing behind.
 type Move struct {
-    Candidate Candidate
+    App       string
+    EntryPath string
+    Target    xdg.Target
 }
 
-// Symlink relocates the candidate's entry, leaving a symlink behind.
-type Symlink struct {
-    Candidate Candidate
+// Occupied skips the entry, because something already sits at its target.
+type Occupied struct {
+    App       string
+    EntryPath string
+    Target    xdg.Target
 }
 
-// Skip leaves the candidate's entry where it is, and says why.
-type Skip struct {
-    Candidate Candidate
-    Reason    SkipReason
+// Unmanaged skips the entry, because no rule claims it — so it has no app.
+type Unmanaged struct {
+    EntryPath string
 }
 
-func (Move) isAction()    {}
-func (Symlink) isAction() {}
-func (Skip) isAction()    {}
+func (Move) isAction()      {}
+func (Occupied) isAction()  {}
+func (Unmanaged) isAction() {}
 ```
+
+Three of the five variants; `PLAN.md` holds `Symlink` and `Unsupported`. One
+variant per case, never a single `Skip` carrying a reason: the payloads differ,
+so one struct could only hold their union, and `Unmanaged` — which has neither
+app nor target — would leave both fields empty. That is the optional-field lie
+§Modelling data forbids.
 
 Branch on either with `switch`, never an `if`/`else` chain. Adding a variant
 must break every switch that ignores it, and
