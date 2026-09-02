@@ -75,8 +75,8 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   one *skip reason* that also warrants a warning, since it is the only one the
   user has to decide something about.
 - **relocation**: how a *rule* relocates its *entry*: either by moving it
-  outright, or by moving it and leaving a *symlink* behind. Applied as part of
-  an *action*.
+  outright, or by moving it and leaving a *symlink* behind. The rule declares
+  it, the *plan* carries it out; a *move* rule yields a *move* *action*.
 - **symlink**: the symbolic link between the original *entry* path and the new
   entry path relocated within the appropriate *location*. Used when an *app*
   does not fully adhere to the XDG specification, and the old entry path still
@@ -85,10 +85,9 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
 - **candidate**: a *rule* paired with a matching *entry* in *home*, along with
   the *target* that entry should relocate to. A *plan* is built from one or
   more candidates.
-- **action**: what the tool intends to do with one *entry*: move, symlink, or
-  skip. *Move* and *symlink* deliberately name both a *relocation* and an
-  action: the *rule* declares the relocation, and the action the *plan* emits
-  for it carries the same name.
+- **action**: what the *plan* emits for one *entry*, one of five: *move* and
+  *symlink* relocate it; *occupied*, *unmanaged*, and *unsupported* skip it,
+  each named for its *skip reason*.
 - **skip reason**: why the *plan* skips an *entry* instead of relocating it. One
   of three: *occupied*, the entry's *target* is an *occupied target*;
   *unmanaged*, no *rule* *claims* the entry; *unsupported*, the entry's *app*
