@@ -1,39 +1,78 @@
 ---
 name: testing
-description: How tests are written in this repo — test format and Given/When/Then structure, when a table-driven test is legitimate, assertion shape with go-cmp, integration coverage against temporary directories, what to test and what to leave to a dependency's own tests. Load before writing, changing, or reviewing any test.
+description: How specs are written in this repo with Ginkgo and Gomega — Describe/Context/It format and Given/When/Then structure, when a DescribeTable is legitimate, assertion shape with BeComparableTo, integration coverage against temporary directories, what to test and what to leave to a dependency's own tests. Load before writing, changing, or reviewing any spec.
 ---
 
 # Testing conventions
 
-**Test format.** One test function per behavior, named
-`TestSubject_ShouldStateTheBehavior`, with BDD-style Given/When/Then comments
-inside:
+**Spec format.** One `It` per behavior, inside a `Describe` naming the subject
+and a `Context` naming the condition, with BDD-style Given/When/Then comments
+inside the spec body:
 
 ```go
 // see internal/domain/xdg/xdg_test.go
-func TestResolve_ShouldFallBackToTheSpecifiedDefaultsWhenNothingIsSet(t *testing.T) {
-    // Given a home directory and no XDG variables are set
-    environment := Environment{Home: "/home/dwr"}
+var _ = Describe("Resolve", func() {
+    Context("when no XDG variables are set", func() {
+        It("should fall back to the specified defaults", func() {
+            // Given a home directory and no XDG variables are set
+            environment := Environment{Home: "/home/dwr"}
 
-    // When resolving the base directories
-    got, err := Resolve(environment)
-    if err != nil {
-        t.Fatalf("resolve base directories: %v", err)
-    }
+            // When resolving the base directories
+            baseDirs, err := Resolve(environment)
 
-    // Then every location falls back to its default under home
-    want := BaseDirs{
-        config: "/home/dwr/.config",
-        data:   "/home/dwr/.local/share",
-        state:  "/home/dwr/.local/state",
-        cache:  "/home/dwr/.cache",
-    }
+            // Then every location falls back to its default under home
+            Expect(err).NotTo(HaveOccurred())
+            Expect(baseDirs).To(BeComparableTo(BaseDirs{
+                config: "/home/dwr/.config",
+                data:   "/home/dwr/.local/share",
+                state:  "/home/dwr/.local/state",
+                cache:  "/home/dwr/.cache",
+            }, cmp.AllowUnexported(BaseDirs{})))
+        })
+    })
+})
+```
 
-    if diff := cmp.Diff(want, got, cmp.AllowUnexported(BaseDirs{})); diff != "" {
-        t.Errorf("base directories mismatch (-want +got):\n%s", diff)
-    }
+The three descriptions concatenate into one sentence in the output — `Resolve
+when no XDG variables are set should fall back to the specified defaults` — so
+write them to read that way. The behavior string is lowercase, prefixed
+`should`, and followed by an infinitive: `should fall back`, never `should falls
+back`. Drop the `Context` where the condition adds nothing, and let two
+conditions share a behavior string when they really do assert the same thing.
+
+Every spec file dot-imports the same two packages:
+
+```go
+import (
+    . "github.com/onsi/ginkgo/v2/dsl/core"
+    . "github.com/onsi/gomega"
+)
+```
+
+A file holding a table adds `"github.com/onsi/ginkgo/v2/dsl/table"` beside
+them; a file without one must not, since an unused import does not compile.
+
+The split DSL packages, never the top-level `ginkgo/v2` — its `Entry` collides
+with the `plan.Entry` domain type, and `package plan` will not compile.
+`dsl/core` and Gomega are dot-imported, which ST1001 permits only because
+`.golangci.yml` whitelists exactly those two paths; `dsl/table` keeps its own
+name, so `table.DescribeTable` and `table.Entry` read the same everywhere and
+the colliding package gets no special case. A dot import is per-file, so each
+spec file repeats the block.
+
+Each package has one bootstrap file — `xdg_suite_test.go`, `plan_suite_test.go`
+— holding the only `func Test…` the package still has:
+
+```go
+func TestXdg(t *testing.T) {
+    RegisterFailHandler(Fail)
+    RunSpecs(t, "xdg")
 }
 ```
+
+`Fail` is Ginkgo's, `RegisterFailHandler` is Gomega's. The bootstrap goes in the
+package under test rather than an external `_test` package, because specs
+construct `BaseDirs{config: …}` and call unexported `rules()`.
 
 **Table-driven tests are the exception, not the default.** The plain form above
 is what a new test looks like; a table is what one occasionally becomes. Reach
@@ -41,105 +80,152 @@ for it only when all three hold: the unit is a pure input→output function; eve
 row exercises **one** behavior already pinned by its own Red → Green cycle; and
 the rows differ in *data* only — not in shape, setup, or which assertion runs.
 Resolving the same path against each XDG location fits. Anything where a row
-needs its own `if` in the loop body, or carries a `wantErr` alongside rows that
-want a value, does not — that is two behaviors, and it wants two functions.
+needs its own `if` in the shared body, or carries a `wantErr` alongside rows
+that want a value, does not — that is two behaviors, and it wants two specs.
 
 ```go
 // see internal/domain/xdg/xdg_test.go
-func TestTarget_ShouldJoinAPathOntoItsLocationsBaseDirectory(t *testing.T) {
-    // Given base directories resolved from a home directory
-    baseDirs, err := Resolve(Environment{Home: "/home/dwr"})
-    if err != nil {
-        t.Fatalf("resolve base directories: %v", err)
-    }
+var _ = Describe("Target", func() {
+    var baseDirs BaseDirs
 
-    tests := []struct {
-        name     string
-        location Location
-        relPath  string
-        want     Target
-    }{
-        {
-            name:     "should resolve a target under the config base",
-            location: LocationConfig,
-            relPath:  "git/config",
-            want:     "/home/dwr/.config/git/config",
-        },
-        {
-            name:     "should resolve a target under the data base",
-            location: LocationData,
-            relPath:  "gnupg",
-            want:     "/home/dwr/.local/share/gnupg",
-        },
-    }
+    BeforeEach(func() {
+        // Given base directories resolved from a home directory
+        var err error
 
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
+        baseDirs, err = Resolve(Environment{Home: "/home/dwr"})
+        Expect(err).NotTo(HaveOccurred())
+    })
+
+    table.DescribeTable("should join a path onto its location's base directory",
+        func(location Location, relPath string, want Target) {
             // When resolving a path relative to that location's base
-            got, err := baseDirs.Target(tt.relPath, tt.location)
-            if err != nil {
-                t.Fatalf("resolve target: %v", err)
-            }
+            target, err := baseDirs.Target(relPath, location)
 
             // Then the target exists inside the base directory
-            if diff := cmp.Diff(tt.want, got); diff != "" {
-                t.Errorf("target mismatch (-want +got):\n%s", diff)
-            }
-        })
-    }
-}
+            Expect(err).NotTo(HaveOccurred())
+            Expect(target).To(BeComparableTo(want))
+        },
+        table.Entry("for the config location",
+            LocationConfig, "git/config",
+            Target("/home/dwr/.config/git/config")),
+        table.Entry("for the data location",
+            LocationData, "gnupg",
+            Target("/home/dwr/.local/share/gnupg")),
+    )
+})
+```
+
+Each `Entry`'s arguments are passed positionally to the shared body, so a row
+can only be data — the third condition above, now enforced by a signature
+rather than by discipline. Wrap a row's arguments across lines as above; the
+`lll` exclusion exists for the description, not as licence for a 120-column
+row.
+
+An `Entry` description is the discriminator and is appended after the table's,
+so the two are written to join up. Where rows differ by a value, the row names
+that value — `for the config location`. Where they differ by *why* the same
+behavior holds, the condition goes in a `Context` and each row starts `because`:
+
+```
+Target when the path does not point inside its base directory
+  should refuse to name a target at all because it is absolute
 ```
 
 A table compresses behavior *already* driven out test-first; it never
 substitutes for the cycle. A row for genuinely new behavior gets its own
-Red → Green first and is folded in once green — which is also how a plain test
+Red → Green first and is folded in once green — which is also how a plain spec
 becomes a table: the second row arrives red, not as a refactor.
 
 Examples inside doc comments document behavior as plain input/output pairs and
 take no Given/When/Then comments, whether or not they are wired up as an
 executable `func Example…`.
 
-**Spec language.** Test names and Given/When/Then comments describe behavior in
-domain terms, not implementation. Don't reference parameter names, function
-calls, or sentinel names in the description itself. Setup and assertions use the
-implementation freely; the names and comments are the spec layer.
+**Spec language.** Spec descriptions and Given/When/Then comments describe
+behavior in domain terms, not implementation. Don't reference parameter names,
+function calls, or sentinel names in the description itself. Setup and
+assertions use the implementation freely; the descriptions and comments are the
+spec layer.
 
-- ✅ `TestTarget_ShouldRejectAPathThatDoesNotLiveInsideItsBaseDirectory` —
-  behavior, in domain terms
-- ❌ `TestTarget_ShouldReturnErrInvalidTargetWhenPathHasDotDot` — leaks the
+- ✅ `Context("when the path does not point inside its base directory")` /
+  `It("should refuse to name a target at all")` — behavior, in domain terms
+- ❌ `It("should return ErrInvalidTarget when the path has ..")` — leaks the
   sentinel's name and the parsing mechanics
 
-The name list is also the coverage report: `go test -v -run 'TestResolve_'`
-prints one subject's behaviors in source order, and a missing input class reads
-as a gap in that prose. Declare them in an order that makes it read that way.
+The spec tree is also the coverage report:
 
-**Assertion shape.** Assert on whole values with `github.com/google/go-cmp/cmp`
-and report the diff:
-
-```go
-if diff := cmp.Diff(want, got); diff != "" {
-    t.Errorf("plan mismatch (-want +got):\n%s", diff)
-}
+```sh
+go test ./internal/domain/xdg/ -v -ginkgo.v
 ```
 
-`cmp.Diff` takes `want` first — reversing it inverts the `-`/`+` legend and
-misleads whoever reads the failure. Never `reflect.DeepEqual` on a struct: it
-answers true/false where `cmp` shows which field moved — `forbidigo` bans it.
-Diff the whole value rather than indexing into it: `got[0]` asserts on one
-element and silently stops covering the rest. For a struct with unexported
-fields, pass `cmp.AllowUnexported(T{})`; to exclude a volatile field such as a
-timestamp, `cmpopts.IgnoreFields` — both beat asserting field by field, which
-silently stops covering fields added later. For the error arm,
-`errors.Is`/`errors.As` per the Guiding principles in `CLAUDE.md` — never
-`err.Error()` text, which an upstream wrapping layer changes without any
-behavior changing.
+prints every subject's behaviors in source order, and adding
+`-ginkgo.focus='Resolve'` narrows it to one. Both flags are needed: `-ginkgo.v`
+alone is swallowed by `go test`'s output buffering, and `-v` alone prints dots
+rather than names. A missing input class reads as a gap in that prose, so
+declare containers in an order that makes it read that way.
+
+**Assertion shape.** Assert on whole values with `BeComparableTo`, which runs
+`github.com/google/go-cmp/cmp` underneath and reports its diff:
+
+```go
+Expect(candidates).To(BeComparableTo(want))
+```
+
+**Never `Equal`.** That matcher is `reflect.DeepEqual` and answers true/false
+where `BeComparableTo` shows which field moved. `forbidigo` bans
+`reflect.DeepEqual` outright, but Gomega calls it from inside the matcher where
+the linter cannot see it, so the rule lives here instead of in `.golangci.yml`.
+It is absolute — it holds for a scalar too. Reach for the matcher that names
+the property instead: `HaveLen` for a length, `ContainElement` for membership.
+
+`BeComparableTo` passes `actual` to `cmp.Diff` first, so its legend is
+`-actual +expected` — the reverse of `cmp.Diff(want, got)`, and `+` is the side
+the spec asked for. Diff the whole value rather than indexing into it —
+`candidates[0]` asserts on one element and
+silently stops covering the rest. `cmp` options pass straight through, so
+`cmp.AllowUnexported(T{})` covers a struct with unexported fields and
+`cmpopts.IgnoreFields` excludes a volatile one such as a timestamp; both beat
+asserting field by field, which silently stops covering fields added later.
+
+For the error arm, `MatchError(ErrInvalidTarget)` — it tries `errors.Is` first,
+so the sentinel-identity rule from `CLAUDE.md` §Error handling carries over
+intact. Never assert on `err.Error()` text, which an upstream wrapping layer
+changes without any behavior changing. Where a value is only meaningful if the
+call succeeded, guard it with `Expect(err).NotTo(HaveOccurred())`: a failed
+`Expect` aborts the spec, so it does the job the old `t.Fatalf` guard did and
+the assertion below it never runs against a zero value.
+
+**Ginkgo mechanics.** The container tree is built at *load time*: the closures
+passed to `Describe` and `Context` run once, before any spec, purely to register
+what is inside them. Only `It`, `BeforeEach`, and their siblings run at spec
+time. A statement written directly in a `Describe` body therefore executes once
+and leaks its value into every spec below it. All setup goes in `BeforeEach`,
+against a `var` declared at container level — the `Target` table above is the
+shape. Where every container in a file wants the same fixture, a top-level
+`var _ = BeforeEach(…)` against a package-level `var` applies to the whole
+suite, which is how `plan_test.go` resolves its base directories once.
+
+That `var` looks like shared mutable state and is not: `BeforeEach` re-runs
+before every spec, so each one gets a fresh value. Two ways to get it wrong,
+both of which compile and fail silently:
+
+- **Assigning in an `It`.** The value is built for that spec alone, and every
+  other spec reads whatever the previous one left behind.
+- **`:=` inside `BeforeEach`.** That declares a *new* `baseDirs` shadowing the
+  container-level one, which then keeps its zero value forever. Declare
+  `var err error` and assign both with `=`.
+
+Ginkgo randomises the order of top-level containers on every run, which turns
+accidental coupling between specs into a failure rather than a latent bug. Each
+run prints its seed; pass it back as `-ginkgo.seed` to reproduce an ordering.
 
 **Integration coverage.** Cover the orchestrating layer against real temporary
-directories rather than a mocked filesystem. Use `t.TempDir()`: unlike a
-trailing cleanup call, its removal still runs when an earlier assertion fails —
-`usetesting` rejects `os.MkdirTemp` in its favour. Use `t.Cleanup` for anything
-else needing an undo, and `t.Helper()` in shared assertion helpers, which
-`thelper` enforces. For a pure function that only reads a filesystem,
+directories rather than a mocked filesystem. There is no `*testing.T` inside a
+spec, so use `GinkgoT().TempDir()`: like `t.TempDir()`, its removal still runs
+when an earlier assertion fails, where a trailing cleanup call would be skipped.
+Use `DeferCleanup` for anything else needing an undo — it registers against the
+node that calls it, so a `BeforeEach` cleanup runs after each spec — and
+`GinkgoHelper()` in a shared assertion helper, so a failure reports the caller's
+line instead of the helper's. For a pure function that only reads a filesystem,
 `fstest.MapFS` beats a temp directory — the fixture states itself inline.
 
 **What to test.**

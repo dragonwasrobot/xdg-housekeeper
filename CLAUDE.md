@@ -82,8 +82,9 @@ reading the diff.
   `wsl_v5` enforces the exact shape and auto-fixes it.
 - **Keep a line inside 80 columns**, so code sits beside the prose describing
   it — the same width `scripts/check-doc-width` holds Markdown to. `lll`
-  enforces it, exempting a test's `func Test…` declaration, whose name is a
-  sentence that cannot wrap.
+  enforces it, exempting the line that opens a Ginkgo container, spec, or table
+  entry, whose description is a sentence that cannot wrap. Spec bodies stay
+  held to the limit, and a long `Entry` wraps its arguments.
 - **Declare callers above callees.** If function A calls function B, declare A
   above B — same for unexported helpers. A type goes above the functions that
   build it. The reader sees intent before mechanism.
