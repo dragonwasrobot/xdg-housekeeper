@@ -18,13 +18,15 @@ The cycle for each behavior:
    `panic("not implemented")`. No logic yet. **The stub must compile and be
    referenced from the test**, because Go fails the whole package on an unknown
    identifier — an unwired stub yields a build error, which is not a Red.
-3. Write **exactly one** test for the next behavior (labeled, e.g. "behavior
-   2/5") — load the `testing` skill and follow it — and confirm the test fails
+3. Write **exactly one** spec for the next behavior (labeled, e.g. "behavior
+   2/5") — load the `testing` skill and follow it — and confirm the spec fails
    (**Red**). The failure must be an assertion failure or the stub's
-   `not implemented` panic, never a build error.
-4. Implement **only** what this specific test requires (**Green**). Do not write
-   logic that no currently-failing test exercises — that belongs to a future
-   cycle. A sign the Green was too broad: the next test you write passes
+   `not implemented` panic, never a build error. Ginkgo recovers a panic raised
+   in a spec body and reports it as that spec's failure, so a stub still gives
+   a valid Red.
+4. Implement **only** what this specific spec requires (**Green**). Do not write
+   logic that no currently-failing spec exercises — that belongs to a future
+   cycle. A sign the Green was too broad: the next spec you write passes
    immediately, with no code change.
 5. Review the diff against the **Guiding principles** in `CLAUDE.md` (**Blue**)
    — a judgment review, not a tool run. Common targets: a missing doc comment on
@@ -47,23 +49,23 @@ The cycle for each behavior:
    blocked stop means the diff is not ready. It checks a chain only once, so
    it does not replace this step.
 7. **Stop and hand the diff back.** End the turn so the developer reads the
-   cycle's diff before the next one starts. Never begin the next test in the
+   cycle's diff before the next one starts. Never begin the next spec in the
    same response.
 8. Repeat from step 3 until all behaviors are covered.
 
 **Forbidden:**
 
-- Writing production code before a test fails for it.
-- Writing more than one test before running the test suite.
-- Implementing logic that no currently-failing test requires.
-- Deleting or skipping existing tests to make a change land.
+- Writing production code before a spec fails for it.
+- Writing more than one spec before running the suite.
+- Implementing logic that no currently-failing spec requires.
+- Deleting or skipping existing specs to make a change land.
 - Marking work as "tests later".
-- Starting the next cycle's test before the developer has reviewed the current
+- Starting the next cycle's spec before the developer has reviewed the current
   one's diff.
 
 **When unit tests aren't possible** — flag wiring and exit codes in `main.go`,
-or anything that must touch the real home directory rather than a `t.TempDir()`
-— skip the Red → Green cycle, but replace it with a handoff: describe the golden
-path and any relevant edge cases for the developer to exercise manually, and do
-not mark the work done until they confirm. `go vet` and `golangci-lint run`
-still run.
+or anything that must touch the real home directory rather than a
+`GinkgoT().TempDir()` — skip the Red → Green cycle, but replace it with a
+handoff: describe the golden path and any relevant edge cases for the developer
+to exercise manually, and do not mark the work done until they confirm. `go vet`
+and `golangci-lint run` still run.

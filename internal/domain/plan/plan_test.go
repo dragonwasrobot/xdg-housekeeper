@@ -1,99 +1,87 @@
 package plan
 
 import (
-	"testing"
-
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
-	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/ginkgo/v2/dsl/core"
+	. "github.com/onsi/gomega"
 )
 
-func TestCandidates_ShouldResolveTheTargetOfARuleWhoseEntryIsPresent(t *testing.T) {
-	// Given base directories, and an entry in home that a rule claims
-	baseDirs := defaultBaseDirs(t)
+// Every spec below resolves its targets against the same home directory, so the
+// suite builds it once per spec rather than each container repeating itself.
+var baseDirs xdg.BaseDirs
 
-	entries := []Entry{{Path: "/home/dwr/.gitconfig"}}
+var _ = BeforeEach(func() {
+	// Given base directories resolved from a home directory
+	var err error
 
-	// When collecting the candidates
-	got, err := Candidates(entries, baseDirs)
-	if err != nil {
-		t.Fatalf("collect candidates: %v", err)
-	}
+	baseDirs, err = xdg.Resolve(xdg.Environment{Home: "/home/dwr"})
+	Expect(err).NotTo(HaveOccurred())
+})
 
-	// Then the rule that claims it reports the entry and its target
-	want := []Candidate{
-		{
-			Rule: Rule{
-				App:        "git",
-				EntryName:  ".gitconfig",
-				Location:   xdg.LocationConfig,
-				RelPath:    "git/config",
-				Relocation: RelocationMove,
-			},
-			Entry:  Entry{Path: "/home/dwr/.gitconfig"},
-			Target: "/home/dwr/.config/git/config",
-		},
-	}
+var _ = Describe("Candidates", func() {
+	Context("when a rule claims an entry in home", func() {
+		It("should report the entry and the target it resolves to", func() {
+			// Given an entry in home that a rule claims
+			entries := []Entry{{Path: "/home/dwr/.gitconfig"}}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("candidates mismatch (-want +got):\n%s", diff)
-	}
-}
+			// When collecting the candidates
+			candidates, err := Candidates(entries, baseDirs)
 
-func TestCandidates_ShouldLeaveOutAnEntryNoRuleClaims(t *testing.T) {
-	// Given base directories, and an entry in home that no rule claims
-	baseDirs := defaultBaseDirs(t)
+			// Then the rule that claims it reports the entry and its target
+			Expect(err).NotTo(HaveOccurred())
+			Expect(candidates).To(BeComparableTo([]Candidate{
+				{
+					Rule: Rule{
+						App:        "git",
+						EntryName:  ".gitconfig",
+						Location:   xdg.LocationConfig,
+						RelPath:    "git/config",
+						Relocation: RelocationMove,
+					},
+					Entry:  Entry{Path: "/home/dwr/.gitconfig"},
+					Target: "/home/dwr/.config/git/config",
+				},
+			}))
+		})
+	})
 
-	entries := []Entry{{Path: "/home/dwr/.unclaimed"}}
+	Context("when no rule claims an entry in home", func() {
+		It("should leave that entry out", func() {
+			// Given an entry in home that no rule claims
+			entries := []Entry{{Path: "/home/dwr/.unclaimed"}}
 
-	// When collecting the candidates
-	got, err := Candidates(entries, baseDirs)
-	if err != nil {
-		t.Fatalf("collect candidates: %v", err)
-	}
+			// When collecting the candidates
+			candidates, err := Candidates(entries, baseDirs)
 
-	// Then there is nothing to relocate
-	want := []Candidate{}
+			// Then there is nothing to relocate
+			Expect(err).NotTo(HaveOccurred())
+			Expect(candidates).To(BeComparableTo([]Candidate{}))
+		})
+	})
+})
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("candidates mismatch (-want +got):\n%s", diff)
-	}
-}
+var _ = Describe("Rules", func() {
+	It("should name only targets inside their base directories", func() {
+		// Given the compiled-in rule table
+		declared := rules()
 
-func TestRules_ShouldNameOnlyTargetsInsideTheirBaseDirectories(t *testing.T) {
-	// Given base directories
-	baseDirs := defaultBaseDirs(t)
+		// When resolving the target every rule in the table names
+		for _, rule := range declared {
+			_, err := baseDirs.Target(rule.RelPath, rule.Location)
 
-	// When resolving the target every rule in the table names
-	for _, rule := range rules() {
-		_, err := baseDirs.Target(rule.RelPath, rule.Location)
-
-		// Then the rule names one inside its location's base directory
-		if err != nil {
-			t.Errorf("rule for %q: %v", rule.App, err)
+			// Then the rule names one inside its location's base directory
+			Expect(err).NotTo(HaveOccurred(), "rule for %q", rule.App)
 		}
-	}
-}
+	})
 
-func TestRules_ShouldClaimEachEntryWithAtMostOneRule(t *testing.T) {
-	// Given the compiled-in rule table
-	declared := rules()
+	It("should claim each entry with at most one rule", func() {
+		// Given the compiled-in rule table
+		declared := rules()
 
-	// When indexing it by the entry each rule claims
-	indexed := byEntryName(declared)
+		// When indexing it by the entry each rule claims
+		indexed := byEntryName(declared)
 
-	// Then no entry was claimed by more than one rule
-	if diff := cmp.Diff(len(declared), len(indexed)); diff != "" {
-		t.Errorf("claimed entry count mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func defaultBaseDirs(t *testing.T) xdg.BaseDirs {
-	t.Helper()
-
-	baseDirs, err := xdg.Resolve(xdg.Environment{Home: "/home/dwr"})
-	if err != nil {
-		t.Fatalf("resolve base directories: %v", err)
-	}
-
-	return baseDirs
-}
+		// Then no entry was claimed by more than one rule
+		Expect(indexed).To(HaveLen(len(declared)))
+	})
+})

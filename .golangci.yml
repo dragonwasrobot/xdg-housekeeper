@@ -17,8 +17,10 @@ linters:
     - nakedret # §Guiding principles: no naked returns
     - revive # §Guiding principles: doc comments, ctx first
     - sloglint # §Logging conventions: structured key/value form
-    - thelper # testing skill: t.Helper() in shared assertion helpers
-    - usetesting # testing skill: t.TempDir() over os.MkdirTemp
+    # Neither fires on a Ginkgo spec, which has no *testing.T in scope. Kept as
+    # a guard for the first benchmark or fuzz target the repo grows.
+    - thelper
+    - usetesting
     - wsl_v5 # §Guiding principles: let code breathe, defaults match the rule
 
   settings:
@@ -51,7 +53,7 @@ linters:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: write to os.Stdout or os.Stderr explicitly
         - pattern: ^reflect\.DeepEqual$
-          msg: diff whole values with cmp.Diff, which shows which field moved
+          msg: assert with BeComparableTo, which shows which field moved
 
     funlen:
       # The soft ceiling from §Guiding principles, made hard. Lines only:
@@ -86,17 +88,37 @@ linters:
       kv-only: true
       static-msg: true
 
+    staticcheck:
+      # ST1001 bans dot imports and its built-in whitelist covers only
+      # mmcloughlin/avo. Ginkgo and Gomega are dot-imported, so a spec reads
+      # `It("…", func() { Expect(…) })` without `ginkgo/gomega` prefixes.
+      #
+      # `dsl/core` rather than the top-level `ginkgo/v2`, whose `Entry` collides
+      # with the `plan.Entry` domain type. `dsl/table` supplies `Entry` and so
+      # is imported as an alias.
+      dot-import-whitelist:
+        - github.com/onsi/ginkgo/v2/dsl/core
+        - github.com/onsi/gomega
+
   exclusions:
     rules:
-      # A table-driven test is mostly rows; length there is not complexity.
+      # A Describe holds a subject's whole spec tree and a `DescribeTable` is
+      # mostly rows; length in either is not complexity.
       - path: _test\.go
         linters:
           - funlen
 
-      # A test's name is its sentence, and a func declaration cannot wrap
-      # without mangling it. Test bodies stay held to the limit.
+      # Ginkgo registers a suite's specs from `var _ = Describe(…)`, so the
+      # container tree can only be built at package level.
       - path: _test\.go
-        source: ^func Test
+        linters:
+          - gochecknoglobals
+
+      # A spec description is a sentence, and the call carrying it cannot wrap
+      # without mangling it. Spec bodies stay held to the limit, and a long
+      # `Entry` wraps its arguments rather than leaning on this.
+      - path: _test\.go
+        source: ^\s*(var _ = )?(table\.)?(Describe|Context|When|It|Specify|DescribeTable|Entry)\(
         linters:
           - lll
 
