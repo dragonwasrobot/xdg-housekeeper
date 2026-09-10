@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR:-$PWD}/.claude/hooks/doc-width\"",
-            "statusMessage": "Checking doc width",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$PWD}/.claude/hooks/docs\"",
+            "statusMessage": "Checking docs",
             "timeout": 10
           }
         ]

@@ -1,0 +1,61 @@
+# Words `Vale.Spelling` does not know but this repo relies on. Grouped according
+# to high-level themes of: go/toolchain, other tools, domain terms.
+
+# Vale ignores the following: a hyphenated token, a token with a digit, and an
+# all-caps token. Casing is ignored while pluralization needs to be whitelisted.
+
+# Go and toolchain jargon.
+argv
+boolean
+callees
+config
+const
+diffable
+env
+errno
+func
+gofmt
+goroutines
+hardcoded
+jq
+memoized
+mutexes
+repo
+stderr
+stdin
+stdlib
+stdout
+subprocess
+toolchain
+unexported
+variadic
+
+# Tools, projects, and platforms.
+antidot
+gnupg
+Gomega
+Tengo
+ubuntu
+wget
+
+# Domain terms, and identifiers a Go doc comment has to write bare.
+baseDir
+relocations
+relPath
+unmanaged
+xdg
+
+# Ordinary prose the dictionary lacks.
+backticked
+frontmatter
+regenerable
+unpunctuated
+unrepresentable
+untracked
+untrusted
+unwired
+
+# Listed only to accept the possessive; the bare word already passes.
+identifier
+mise
+renderer

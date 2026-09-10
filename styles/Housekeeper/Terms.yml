@@ -1,0 +1,18 @@
+# Retired spellings of terms `CONTEXT.md` registers.
+extends: substitution
+message: "Use '%s' rather than '%s'"
+level: error
+ignorecase: true
+scope: ~text.frontmatter
+swap:
+  base dir: base directory
+  dest: target
+  destination: target
+  dot file: entry
+  dotfile: entry
+  escaping target: invalid target
+  folder: directory
+  item: entry
+  skip kind: skip reason
+  skip type: skip reason
+  soft link: symlink
