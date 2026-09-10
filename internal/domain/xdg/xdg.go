@@ -92,8 +92,8 @@ func base(candidatePath string, fallbackPath string) string {
 	return basePath
 }
 
-// Target is the resolved absolute destination path of an Entry, derived from
-// its location and the path its rule gives relative to that location's base.
+// Target is the absolute path an Entry resolves to, derived from its location
+// and the path its rule gives relative to that location's base.
 type Target string
 
 // Target resolves relPath, a path relative to location's base directory, into

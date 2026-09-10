@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# PostToolUse(Write|Edit) adapter: keep Markdown files to 80 columns and enforce
+# the domain language as it is written.
+#
+# Triggers on any Markdown writes under the project root, tracked or not, in
+# contrast to `mise run verify`.
+#
+# The `scratchpad/` directory is skipped deliberately: `CLAUDE.md` keeps probes
+# there that are *meant* to trip a linter.
+#
+# Silence means clean. Exit 2 hands the violation back to Claude.
+#
+# Example:
+#
+# echo '{"tool_input":{"file_path":"'$PWD'/CLAUDE.md"}}' | .claude/hooks/docs
+
+set -uo pipefail
+
+root="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+# The hook payload arrives as JSON on stdin. Matches "$root/" rather than
+# "$root", so a sibling checkout such as another git worktree is not triggered.
+file=$(jq -r --arg root "$root" '
+  .tool_input.file_path // empty
+  | select(startswith($root + "/") and endswith(".md"))
+  | select(startswith($root + "/scratchpad/") | not)
+')
+
+[ -n "$file" ] || exit 0
+
+# Enforces that a check that could not run triggers an error.
+cd "$root" || exit 2
+
+# Trims prefix of `file` as it uses absolute paths but Vale relies on local glob
+# patterns.
+file="${file#"$root"/}"
+
+# Accumulates status codes rather than immediate exit, so both linters have a
+# chance to report findings.
+exit_status=0
+
+# `check-doc-width` reports on `stdout`; hook protocol reads from `stderr`.
+"$root/scripts/check-doc-width" "$file" >&2 || exit_status=2
+
+# `--output=line` prints nothing when clean, default format prints summary line.
+out=$(mise exec -- vale --output=line "$file" 2>&1)
+status=$?
+
+[ -n "$out" ] && printf '%s\n' "$out" >&2
+
+[ "$status" -eq 0 ] || exit_status=2
+
+exit "$exit_status"

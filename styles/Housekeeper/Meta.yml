@@ -1,0 +1,15 @@
+# Phrases that indicate meta commentary. This usually happens as an
+# unintentional leak from a session with a bot.
+extends: existence
+message: "Meta commentary: '%s'"
+level: warning
+ignorecase: true
+scope: ~text.frontmatter
+tokens:
+  - the (example|table) above
+  - it is worth (noting|mentioning)
+  - as (we|you) (can see|saw)
+  - as mentioned (above|earlier)
+  - in other words
+  - this (section|document) (describes|explains)
+  - note that

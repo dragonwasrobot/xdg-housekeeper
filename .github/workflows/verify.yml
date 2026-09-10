@@ -27,3 +27,4 @@ jobs:
       - run: mise run lint
       - run: mise run test
       - run: mise run doc-width
+      - run: mise run prose

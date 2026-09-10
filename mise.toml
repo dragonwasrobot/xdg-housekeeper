@@ -1,6 +1,7 @@
 [tools]
 go = "1.26.6"
 golangci-lint = "2.12.2"
+vale = "3.20.0"
 
 [tasks.vet]
 description = "Report suspicious constructs the compiler accepts"
@@ -22,9 +23,12 @@ run = 'go test ./...'
 description = "Hold Markdown prose to 80 columns"
 run = 'git ls-files -z "*.md" | xargs -0 ./scripts/check-doc-width'
 
-# A `run` list is sequential and stops at the first failure. `depends` would
-# not: it defaults to `--jobs 4`, interleaving the output of checks meant to be
-# read in order.
+# Only Vale errors cause a non-zero exit, allows warnings to pass verification.
+[tasks.prose]
+description = "Hold prose and doc comments to the domain language"
+run = 'git ls-files -z "*.md" "*.go" | xargs -0 vale'
+
+# A `run` list is sequential and stops at the first failure.
 [tasks.verify]
 description = "Every check a change must pass"
 run = [
@@ -33,4 +37,5 @@ run = [
   'mise run build',
   'mise run test',
   'mise run doc-width',
+  'mise run prose',
 ]

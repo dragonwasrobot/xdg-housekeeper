@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# PostToolBatch adapter: lint every package the batch wrote to, as written.
+# PostToolBatch adapter: lint every package the batch wrote to, as written, and
+# hold its doc comments to the domain language.
 #
 # Triggers on any Go writes under the project root, tracked or not, in
 # contrast to `mise run verify`.
@@ -8,7 +9,7 @@
 # Scoped to the enclosing packages so `golangci-lint` only costs ~0.3s each,
 # and a package is linted once however many of its files the batch wrote.
 #
-# The `scratchpad/` folder is skipped deliberately: `CLAUDE.md` keeps probes
+# The `scratchpad/` directory is skipped deliberately: `CLAUDE.md` keeps probes
 # there that are *meant* to trip a linter.
 #
 # The event takes no matcher, so the jq below is the only filter.
@@ -30,31 +31,38 @@ set -uo pipefail
 
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
 
-# The batch payload arrives as JSON on stdin, carrying every call in the batch.
-# Matches "$root/" rather than "$root", so a sibling checkout such as another
-# git worktree is not triggered. The closing `sub` drops the file name to leave
-# the package directory.
-packages=$(jq -r --arg root "$root" '
+# The batch JSON payload arrives on stdin, carrying every call in the batch.
+# Matches "$root/" rather than "$root", so git worktrees are not triggered.
+files=$(jq -r --arg root "$root" '
   .tool_calls[]
   | select(.tool_name == "Write" or .tool_name == "Edit")
   | .tool_input.file_path // empty
   | select(startswith($root + "/") and endswith(".go"))
   | select(startswith($root + "/scratchpad/") | not)
-  | sub("/[^/]+$"; "")
 ' | sort -u)
 
-[ -n "$packages" ] || exit 0
+[ -n "$files" ] || exit 0
+
+# The scope of `golangci-lint` is the enclosing package while vale's is the
+# individual file. Paths get trimmed to the root to match vale glob patterns.
+file_list=()
+
+while IFS= read -r file; do
+  file_list+=("${file#"$root"/}")
+done <<<"$files"
+
+packages=$(for file in "${file_list[@]}"; do dirname "$file"; done | sort -u)
 
 # Enforces that a check that could not run triggers an error.
 cd "$root" || exit 2
 
-# Accumulated rather than exited on, so one broken package cannot hide a second
-# one written by the same batch.
+# Accumulates status codes rather than immediate exit, so both linters have a
+# chance to report findings.
 exit_status=0
 
 while IFS= read -r package_dir; do
-  # Check on the exit code rather than raw output from `golangci-lint` and
-  # merges both `stdout` and `stderr` output to `out`.
+  # Check on the exit code rather than raw output from `golangci-lint`.
+  # Merge both `stdout` and `stderr` output to `out`.
   out=$(mise exec -- golangci-lint run "$package_dir" 2>&1)
   status=$?
 
@@ -63,5 +71,13 @@ while IFS= read -r package_dir; do
     exit_status=2
   fi
 done <<<"$packages"
+
+# `--output=line` prints nothing when clean, default format prints summary line.
+out=$(mise exec -- vale --output=line "${file_list[@]}" 2>&1)
+status=$?
+
+[ -n "$out" ] && printf '%s\n' "$out" >&2
+
+[ "$status" -eq 0 ] || exit_status=2
 
 exit "$exit_status"

@@ -51,13 +51,18 @@ in `.golangci.yml` enforces it on the import path, so a violation fails
 importable only from within this module — so these packages carry no
 compatibility obligation to anyone outside the repo and can be reshaped freely.
 
-`scratchpad/` is git-ignored and holds throwaway probes — a file that
-deliberately trips a linter, written to confirm what the config actually
-catches rather than what it is assumed to. Give it its own `go.mod`: a nested
-module is invisible to `./...`, so `mise run verify` never sees the probes,
-while `golangci-lint` run from inside still walks up to the repo's real
-`.golangci.yml`. Without that `go.mod` a probe joins the main module and breaks
-the repo's own checks.
+**Probe in `scratchpad/`, not a temp directory outside the repo.** It is
+git-ignored and holds throwaway probes — a file that deliberately trips a
+linter, written to confirm what the config actually catches rather than what it
+is assumed to. **Point the checker at the repo's own config, never a copy of
+the rules**; a hand-written config confirms only what the copy catches.
+
+A probe must stay invisible to `mise run verify`. For Go, give `scratchpad/`
+its own `go.mod` — a nested module is invisible to `./...`, while
+`golangci-lint` run from inside still walks up to the repo's real
+`.golangci.yml`; without it a probe joins the main module and breaks the repo's
+own checks. For a checker fed by `git ls-files`, git-ignoring is already
+enough.
 
 A snippet headed by a file path — `// internal/domain/xdg/xdg.go` — is real
 code, quoted from the package as it stands. The rest are sketches, because
@@ -185,13 +190,11 @@ reading the diff.
 
 - **Keep one ubiquitous language across code and docs.** Every domain concept
   has exactly one name, used identically in type names, doc comments, tests,
-  and prose. `CONTEXT.md` is the registry — it holds the domain background and
-  the definitive term list. Before naming something new, check it; coining a
-  genuinely new domain term means adding it to `CONTEXT.md` in the same change.
-  Near-synonyms are drift: `entry` and `item` must not name the same thing
-  unless both are registered with a defined distinction. When a rename settles
-  a conflict, carry it everywhere the term appears — code, tests, docs — never
-  let two spellings coexist.
+  and prose. `CONTEXT.md` is the registry — check it before naming something
+  new, and coining a genuinely new domain term means adding it there in the
+  same change. `Housekeeper.Terms` fails a run on a registered retired
+  spelling, but reads neither Markdown inline code nor a Ginkgo spec
+  description, and a near-synonym nobody registered is invisible to it.
 - **Name receivers with one or two letters.** `func (b BaseDirs) Target(…)`,
   never `func (baseDirs BaseDirs)` — the receiver is the subject of every line
   in the body and adds nothing the type has not already said. `staticcheck`
