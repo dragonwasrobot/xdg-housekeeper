@@ -2,14 +2,30 @@
 # unintentional leak from a session with a bot.
 extends: existence
 message: "Meta commentary: '%s'"
-level: warning
+level: error
 ignorecase: true
 scope: ~text.frontmatter
 tokens:
+  # Pointing at the document instead of stating the rule.
   - the (example|table) above
   - it is worth (noting|mentioning)
   - as (we|you) (can see|saw)
   - as mentioned (above|earlier)
+  - as (noted|described|shown) (above|earlier|below)
   - in other words
   - this (section|document) (describes|explains)
   - note that
+  # Written from the diff's point of view: comparing previous revisions.
+  - no longer
+  - used to (be|have|hold|carry|sit|live)
+  - (previously|formerly)
+  - as of (this|now|today)
+  - (going forward|from now on)
+  # An assistant's register rather than a rule's.
+  - let(’|')s
+  - keep in mind
+  - (it(’|')s|it is) important to (note|remember)
+  - (in summary|to summarize|to recap)
+  - as requested
+  - hope(fully)? this helps
+  - feel free to

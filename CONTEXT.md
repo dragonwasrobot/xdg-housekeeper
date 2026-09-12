@@ -61,15 +61,22 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   invocation: `git`, `wget`, `gnupg`. One app can own more than one *entry*,
   e.g. the `claude` app may have a *rule* for each of the entries `.claude.json`
   and `.claude/`.
+- **unsupported app**: an *app* whose *entries* cannot be relocated at all, so
+  no *rule* ever claims them. Declared in its own list beside the *rules*, one
+  row per *entry* the app owns, each row carrying an *obstacle*.
+- **obstacle**: what stands in an *unsupported app*'s way, carried into the
+  *action* so the *plan* says why it skipped the *entry*.
 - **claim**: what a *rule* does to the one *entry* it names. Every rule claims
   exactly one entry, and every entry is claimed by at most one rule; an entry no
-  rule claims is *unmanaged*.
+  rule claims is *unsupported* when an *unsupported app* owns it, and
+  *unmanaged* otherwise.
 - **target**: the resolved absolute destination path of an *entry*, derived from
   the *rule* matching the *entry*.
 - **invalid target**: the failure of a *rule* to name a *target* at all, because
   the path it gives within the *base directory* is absolute, or resolves outside
-  that base directory, or its *location* is not one of the four the
-  specification defines. Always produces a failure, never a warning.
+  that base directory. Always produces a failure, never a warning. A *location*
+  outside the four the specification defines is not one of these: the four are
+  compiled in, so naming another is programmer error, and it panics.
 - **occupied target**: a *target* that already exists in its *base directory*,
   leaving the *entry* nowhere to relocate to. Always produces a skip, and is the
   one *skip reason* that also warrants a warning, since it is the only one the
@@ -83,16 +90,21 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   needs to be present. Also names the *relocation* and the *action* that create
   one.
 - **candidate**: a *rule* paired with a matching *entry* in *home*, along with
-  the *target* that entry should relocate to. A *plan* is built from one or
-  more candidates.
+  the *target* that entry should relocate to. Only an entry present in home
+  produces one.
+- **survey**: every *entry* found in *home* together with the *candidates* its
+  *rules* produced. The value a *plan* is built from, so a candidate can never
+  name an entry the survey does not hold.
 - **action**: what the *plan* emits for one *entry*, one of five: *move* and
   *symlink* relocate it; *occupied*, *unmanaged*, and *unsupported* skip it,
   each named for its *skip reason*.
 - **skip reason**: why the *plan* skips an *entry* instead of relocating it. One
   of three: *occupied*, the entry's *target* is an *occupied target*;
-  *unmanaged*, no *rule* *claims* the entry; *unsupported*, the entry's *app*
-  has no rule because it cannot be relocated at all; it reads the entry from a
-  fixed path and offers no way to point it elsewhere.
-- **plan**: the complete ordered set of *actions*, computed before any of them
-  run, based on the *entries* in *home* and the declared *rules*. A plan is a
-  value; nothing changes on disk until the plan is applied.
+  *unmanaged*, no *rule* *claims* the entry and no *unsupported app* owns it;
+  *unsupported*, an *unsupported app* owns the entry, and its *obstacle* names
+  what stands in the way.
+- **plan**: the complete set of *actions*, computed before any of them run,
+  based on the *entries* in *home* and the declared *rules*. Ordered by *app*
+  name, with the *entries* no app owns trailing every app, so the same *home*
+  always yields the same plan. A plan is a value; nothing changes on disk until
+  the plan is applied.

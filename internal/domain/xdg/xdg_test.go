@@ -205,10 +205,14 @@ var _ = Describe("Target", func() {
 		It("should refuse to name a target at all", func() {
 			// When resolving an otherwise valid path against a location
 			// outside the four the specification defines
-			_, err := baseDirs.Target("git/config", Location(""))
+			resolve := func() {
+				// it panics before it can return an error
+				//nolint:errcheck
+				baseDirs.Target("git/config", Location(""))
+			}
 
 			// Then it refuses to name a target at all
-			Expect(err).To(MatchError(ErrInvalidTarget))
+			Expect(resolve).To(Panic())
 		})
 	})
 })

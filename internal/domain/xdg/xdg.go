@@ -97,15 +97,11 @@ func base(candidatePath string, fallbackPath string) string {
 type Target string
 
 // Target resolves relPath, a path relative to location's base directory, into
-// the absolute target it specifies. It fails with ErrInvalidTarget unless the
-// location is one this package defines and relPath specifies something inside
-// that location's base directory.
+// the absolute target it specifies. It fails with ErrInvalidTarget unless
+// relPath specifies something inside that base directory, and panics on a
+// location this package does not define.
 func (b BaseDirs) Target(relPath string, location Location) (Target, error) {
-	basePath, err := b.baseDir(location)
-	if err != nil {
-		return "", err
-	}
-
+	basePath := b.baseDir(location)
 	targetPath := filepath.Join(basePath, relPath)
 	insideBase := !filepath.IsAbs(relPath) && within(targetPath, basePath)
 
@@ -116,21 +112,24 @@ func (b BaseDirs) Target(relPath string, location Location) (Target, error) {
 	return Target(targetPath), nil
 }
 
-// baseDir returns the base directory that location resolves to. It fails with
-// ErrInvalidTarget when the location is not one defined by this package, since
-// an entry has nowhere to go without a base directory to resolve against.
-func (b BaseDirs) baseDir(location Location) (string, error) {
+// baseDir returns the base directory that location resolves to. It panics on a
+// location this package does not define.
+func (b BaseDirs) baseDir(location Location) string {
 	switch location {
 	case LocationConfig:
-		return b.config, nil
+		return b.config
+
 	case LocationData:
-		return b.data, nil
+		return b.data
+
 	case LocationState:
-		return b.state, nil
+		return b.state
+
 	case LocationCache:
-		return b.cache, nil
+		return b.cache
+
 	default:
-		return "", fmt.Errorf("resolve location %q: %w", location, ErrInvalidTarget)
+		panic(fmt.Sprintf("undefined location %q", location))
 	}
 }
 

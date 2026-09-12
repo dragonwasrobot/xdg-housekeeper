@@ -163,6 +163,49 @@ alone is swallowed by `go test`'s output buffering, and `-v` alone prints dots
 rather than names. A missing input class reads as a gap in that prose, so
 declare containers in an order that makes it read that way.
 
+**Fixtures.** A value more than one spec spells out *identically* gets a fixture
+at the foot of the spec file, named for what it is — `gitRule()`, never
+`makeRule()` or `newFixture()`. Repetition of a shape is not repetition of a
+value: a `Survey` literal opens nearly every spec in `plan_test.go` and stays
+inline in each, because what fills it is what that spec is about.
+
+A fixture with structure is a function taking no arguments and returning the
+value whole. One that is a bare scalar is a `const` — `bashObstacle` — since
+there is nothing for a body to assemble. A spec needing a variant binds the
+fixture and changes the one field that differs, so the deviation is what the
+reader sees:
+
+```go
+// see internal/domain/plan/plan_test.go
+bogus := gitRule()
+bogus.Relocation = Relocation("bogus")
+```
+
+What makes one spec differ from its neighbours stays inline. Entry paths,
+targets, and the occupied map are written out in the spec body, because a
+constructor hiding those leaves the reader crossing the file to learn what is
+being asserted. The bar for extracting is repetition across specs, never length
+within one.
+
+A fixture belongs in an expectation as readily as in the setup — the `Claim`
+spec asserts `Rule: gitRule()` — as long as it is **pinned**: some spec already
+using it fails if the fixture drifts from what it copies. `gitRule()` restates a
+row of `rules()` and `Claim` consults that real table, so a changed row breaks
+the spec; `bashObstacle` is pinned the same way through `unsupportedApps()`. The
+`Rules` specs do not do that job — they assert invariants over whatever the
+table holds, never the values in it.
+
+A fixture that copies nothing needs no pin. `lessRule()` and `wgetRule()` name
+rules `rules()` never declares, and every subject reaching them — `Build` by
+argument, `Targets` through its receiver — is handed its candidates by the spec
+rather than consulting the table. They are values a spec invents, with nothing
+to drift from.
+
+A fixture that copies a row and has no pin is the case to fix, not to document.
+Never add a spec comparing the fixture against the row: that pins the copy and
+covers no behavior. Either route a spec that uses it through the real table, or
+stop copying — invent a value and name it for what the spec needs.
+
 **Assertion shape.** Assert on whole values with `BeComparableTo`, which runs
 `github.com/google/go-cmp/cmp` underneath and reports its diff:
 
