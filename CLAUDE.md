@@ -34,7 +34,7 @@ internal/
 ```
 
 Directories carry the **layer**; package names carry the **concern**. So call
-sites read `plan.Candidates(entries, baseDirs)` and `fsys.Walk(root)`, never
+sites read `plan.Claim(entries, baseDirs)` and `fsys.Walk(root)`, never
 `domain.PlanCandidates(...)`. Add packages under a layer as concerns appear;
 never add a package named for a layer, a pattern, or a catch-all (`util`,
 `common`, `helpers`) — if a new package's one-concern sentence is hard to
@@ -97,6 +97,12 @@ reading the diff.
   The real concern is single responsibility: treat approaching the ceiling as a
   signal the function is doing several things, and extract named helpers before
   adding more.
+- **Express a collection transformation with a helper from `lo`.**
+  `lo.FilterMap`, `lo.Filter`, `lo.Reject`, and `lo.KeyBy` say what a `for`
+  leaves implicit in its `continue`s, and a named callback keeps the predicate
+  legible. Write the loop instead where a step returns an error: a callback
+  cannot, so the error would have to be collected outside the call — which is
+  why `plan.Claim` is a loop.
 - **`defer` cleanup immediately after acquiring.** The `defer f.Close()` goes on
   the line after the successful open, never at the end of the function — the
   pairing stays visible and no early return can skip it. That holds for a file
@@ -108,7 +114,7 @@ reading the diff.
   `package-comments` rule enforces it.
 - **Give every exported identifier a doc comment** — functions, types, methods,
   constants, and sentinel errors alike, internal plumbing included — starting
-  with its own name (`// Candidates returns …`), per Go convention; `revive`'s
+  with its own name (`// Claim surveys …`), per Go convention; `revive`'s
   `exported` rule enforces that much. Say *what* the thing does and *why* a
   caller would reach for it, never *how* — the body shows the how. A negation
   ("does X, not Y") earns its place only against an expectation the reader can
@@ -120,7 +126,7 @@ reading the diff.
 
 - **Order parameters by relevance.** The value the function is fundamentally
   about leads; contextual criteria follow; injected config and clients trail:
-  `plan.Candidates(entries, baseDirs)`. When two parameters both read as the
+  `plan.Claim(entries, baseDirs)`. When two parameters both read as the
   subject, ask which one could be frozen into the receiver and still leave a
   sensible operation: `b.In(location).Target(relPath)` reads, the reverse does
   not, so `location` is the criterion and trails. The one exception is
@@ -275,47 +281,70 @@ const (
 ```
 
 Variants carrying differing payloads get a sealed interface, closed by an
-unexported method. Give each variant exactly the fields that case has, under
-the names the domain language already uses — `EntryPath` is `Entry.Path`,
-`Target` is `Candidate.Target` — never a fresh `From`/`To` pair for a path
-named elsewhere:
+unexported method. Keep each variant's fields unexported and reach them through
+accessors, so a fact every variant carries can live on the interface rather
+than in a type switch. Name them as the domain language already does —
+`EntryPath` is `Entry.Path`, `Target` is `Candidate.Target` — never a fresh
+`From`/`To` pair for a path named elsewhere:
 
 ```go
 // The directive is what makes gochecksumtype check switches over it — a
 // sealed interface without it is unchecked.
 //
 //sumtype:decl
-type Action interface{ isAction() }
+type Action interface {
+    isAction()
+
+    // App returns the app that owns the entry, and whether any app does.
+    App() (string, bool)
+
+    // EntryPath returns the path in home of the entry this action covers.
+    EntryPath() string
+}
 
 // Move relocates the entry to its target, leaving nothing behind.
 type Move struct {
-    App       string
-    EntryPath string
-    Target    xdg.Target
+    app       string
+    entryPath string
+    target    xdg.Target
 }
 
-// Occupied skips the entry, because something already sits at its target.
-type Occupied struct {
-    App       string
-    EntryPath string
-    Target    xdg.Target
-}
+// App implements Action.
+func (m Move) App() (string, bool) { return m.app, true }
+
+// EntryPath implements Action.
+func (m Move) EntryPath() string { return m.entryPath }
+
+// Target returns the path the entry relocates to.
+func (m Move) Target() xdg.Target { return m.target }
 
 // Unmanaged skips the entry, because no rule claims it — so it has no app.
 type Unmanaged struct {
-    EntryPath string
+    entryPath string
 }
 
+// App implements Action, reporting false: nothing here knows its app.
+func (u Unmanaged) App() (string, bool) { return "", false }
+
+// EntryPath implements Action.
+func (u Unmanaged) EntryPath() string { return u.entryPath }
+
 func (Move) isAction()      {}
-func (Occupied) isAction()  {}
 func (Unmanaged) isAction() {}
 ```
 
-Three of the five variants; `PLAN.md` holds `Symlink` and `Unsupported`. One
-variant per case, never a single `Skip` carrying a reason: the payloads differ,
-so one struct could only hold their union, and `Unmanaged` — which has neither
-app nor target — would leave both fields empty. That is the optional-field lie
-§Modelling data forbids.
+Two of the five variants; `PLAN.md` holds the rest. One variant per case, never
+a single `Skip` carrying a reason: the payloads differ, so one struct could only
+hold their union, and `Unmanaged` — which has neither app nor target — would
+leave both fields empty. That is the optional-field lie §Modelling data forbids.
+
+A value **every** variant carries goes on the interface, where a forgotten
+variant is a compile error rather than a lint finding; `App` returns
+`(string, bool)` because an unmanaged entry has none, and an empty string would
+be the same lie. A value only some variants carry stays a plain accessor on
+those. Document the contract on the interface method and write
+`// X implements Action.` on each variant — `revive` demands a comment on every
+exported method, so the repetition can go but the comment cannot.
 
 Branch on either with `switch`, never an `if`/`else` chain. Adding a variant
 must break every switch that ignores it, and
@@ -325,10 +354,21 @@ a `default` clause never excuses a missing case, so `exhaustive` and
 
 The two forms want opposite endings. A typed constant is not closed at run
 time — `Location("bogus")` is representable, and a bare `switch` matching
-nothing silently does nothing — so give it a `default` that returns an error,
-as `baseDir` does in `internal/domain/xdg/xdg.go`. A sealed interface is closed
-by its unexported method, so omit `default` there; it could only ever catch a
-nil interface value.
+nothing silently does nothing — so give it a `default` that panics, naming the
+value it rejected:
+
+```go
+default:
+    panic(fmt.Sprintf("rule for %q declares unknown relocation %q",
+        rule.App, rule.Relocation))
+```
+
+The variants are compiled in, so a value outside them is programmer error, not
+input to report — never widen a signature to `(T, error)` for a failure no
+reachable input produces. A variant parsed from untrusted text is validated at
+the edge that reads it instead, per §Boundaries, so the switch downstream still
+panics. A sealed interface is closed by its unexported method, so omit
+`default` there; it could only ever catch a nil interface value.
 
 ## Error handling
 

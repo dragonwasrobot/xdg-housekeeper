@@ -5,9 +5,12 @@
 # all-caps token. Casing is ignored while pluralization needs to be whitelisted.
 
 # Go and toolchain jargon.
+accessor
+accessors
 argv
 boolean
 callees
+cmp
 config
 const
 diffable
@@ -38,10 +41,9 @@ Tengo
 ubuntu
 wget
 
-# Domain terms, and identifiers a Go doc comment has to write bare.
-baseDir
+# Domain terms. A camelCase identifier needs no entry: `Housekeeper.Spelling`
+# filters those out as it clashed with how Go doc comments are written.
 relocations
-relPath
 unmanaged
 xdg
 
