@@ -35,7 +35,9 @@ The cycle for a structured refactor:
    it does not replace this step.
 5. **Stop and hand the diff back.** End the turn so the developer reads the
    change before the next lands — that human read is the second review. A
-   labeled change may span more than one edit; finish it, then yield.
+   labeled change may span more than one edit; issue them in a single response,
+   so the per-batch `go-lint` hook sees a compiling tree rather than a
+   half-applied rename, then yield.
 
 **Forbidden:**
 
