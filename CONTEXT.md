@@ -63,9 +63,10 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   and `.claude/`.
 - **unsupported app**: an *app* whose *entries* cannot be relocated at all, so
   no *rule* ever claims them. Declared in its own list beside the *rules*, one
-  row per *entry* the app owns, each row carrying an *obstacle*.
-- **obstacle**: what stands in an *unsupported app*'s way, carried into the
-  *action* so the *plan* says why it skipped the *entry*.
+  item per *entry* the app owns, each item specifying an *obstacle*.
+- **obstacle**: what stands in the way of relocating an *entry*, specified in
+  the *action* so the *plan* says why it skipped it. An *unsupported app*
+  declares its own; a *blocked target* specifies the file in the way.
 - **claim**: what a *rule* does to the one *entry* it names. Every rule claims
   exactly one entry, and every entry is claimed by at most one rule; an entry no
   rule claims is *unsupported* when an *unsupported app* owns it, and
@@ -77,10 +78,16 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   that base directory. Always produces a failure, never a warning. A *location*
   outside the four the specification defines is not one of these: the four are
   compiled in, so naming another is programmer error, and it panics.
-- **occupied target**: a *target* that already exists in its *base directory*,
-  leaving the *entry* nowhere to relocate to. Always produces a skip, and is the
-  one *skip reason* that also warrants a warning, since it is the only one the
-  user has to decide something about.
+- **occupied target**: a *target* where a file already exists in its *base
+  directory* location, leaving the *entry* nowhere to relocate to. Always
+  produces a skip, and is one of the two *skip reasons* the user has to act on,
+  with a *blocked target* being the other, so the *plan*'s summary spells it out
+  separately.
+- **blocked target**: a *target* nothing can be placed at, because a regular
+  file exists where one of its parent directories would have to be. Nothing
+  exists at the target itself, so it is not an *occupied target*; the *obstacle*
+  specifies the file in the way. Detected while the *plan* is built, rather than
+  left to surface when it is applied.
 - **relocation**: how a *rule* relocates its *entry*: either by moving it
   outright, or by moving it and leaving a *symlink* behind. The rule declares
   it, the *plan* carries it out; a *move* rule yields a *move* *action*.
@@ -95,14 +102,14 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
 - **survey**: every *entry* found in *home* together with the *candidates* its
   *rules* produced. The value a *plan* is built from, so a candidate can never
   name an entry the survey does not hold.
-- **action**: what the *plan* emits for one *entry*, one of five: *move* and
-  *symlink* relocate it; *occupied*, *unmanaged*, and *unsupported* skip it,
-  each named for its *skip reason*.
+- **action**: what the *plan* emits for one *entry*, one of six: *move* and
+  *symlink* relocate it; *blocked*, *occupied*, *unmanaged*, and *unsupported*
+  skip it, each named for its *skip reason*.
 - **skip reason**: why the *plan* skips an *entry* instead of relocating it. One
-  of three: *occupied*, the entry's *target* is an *occupied target*;
-  *unmanaged*, no *rule* *claims* the entry and no *unsupported app* owns it;
-  *unsupported*, an *unsupported app* owns the entry, and its *obstacle* names
-  what stands in the way.
+  of four: *blocked*, the entry's *target* is a *blocked target*; *occupied*,
+  the entry's *target* is an *occupied target*; *unmanaged*, no *rule* *claims*
+  the entry and no *unsupported app* owns it; *unsupported*, an *unsupported
+  app* owns the entry, and its *obstacle* specifies what stands in the way.
 - **plan**: the complete set of *actions*, computed before any of them run,
   based on the *entries* in *home* and the declared *rules*. Ordered by *app*
   name, with the *entries* no app owns trailing every app, so the same *home*

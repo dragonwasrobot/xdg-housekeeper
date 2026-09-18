@@ -113,7 +113,7 @@ var _ = Describe("Build", func() {
 			}
 
 			// When building the plan
-			actions := Build(survey, map[xdg.Target]bool{})
+			actions := Build(survey, map[xdg.Target]TargetState{})
 
 			// Then the entry is moved to its target
 			Expect(actions).To(BeComparableTo(Plan{
@@ -142,7 +142,7 @@ var _ = Describe("Build", func() {
 			}
 
 			// When building the plan
-			actions := Build(survey, map[xdg.Target]bool{})
+			actions := Build(survey, map[xdg.Target]TargetState{})
 
 			// Then the entry is linked back from the path it left
 			Expect(actions).To(BeComparableTo(Plan{
@@ -155,7 +155,7 @@ var _ = Describe("Build", func() {
 		})
 	})
 
-	Context("when something already sits at an entry's target", func() {
+	Context("when something already exists at an entry's target", func() {
 		It("should skip the entry and name what is in the way", func() {
 			// Given an entry a rule claims, whose target already exists
 			entries := []Entry{{Path: "/home/dwr/.wgetrc"}}
@@ -169,12 +169,12 @@ var _ = Describe("Build", func() {
 					},
 				},
 			}
-			occupied := map[xdg.Target]bool{
-				"/home/dwr/.config/wget/wgetrc": true,
+			states := map[xdg.Target]TargetState{
+				"/home/dwr/.config/wget/wgetrc": TargetOccupied{},
 			}
 
 			// When building the plan
-			actions := Build(survey, occupied)
+			actions := Build(survey, states)
 
 			// Then the entry stays where it is, and its target is named
 			Expect(actions).To(BeComparableTo(Plan{
@@ -187,13 +187,48 @@ var _ = Describe("Build", func() {
 		})
 	})
 
+	Context("when a regular file exists in an entry's target path", func() {
+		It("should skip the entry and name the file in the way", func() {
+			// Given an entry a rule claims, whose target path is blocked by a file
+			entries := []Entry{{Path: "/home/dwr/.wgetrc"}}
+			survey := Survey{
+				entries: entries,
+				candidates: []Candidate{
+					{
+						Rule:   wgetRule(),
+						Entry:  entries[0],
+						Target: "/home/dwr/.config/wget/wgetrc",
+					},
+				},
+			}
+			states := map[xdg.Target]TargetState{
+				"/home/dwr/.config/wget/wgetrc": TargetBlocked{
+					Blocker: "/home/dwr/.config/wget",
+				},
+			}
+
+			// When building the plan
+			actions := Build(survey, states)
+
+			// Then the entry stays where it is, and the obstacle reads as prose
+			Expect(actions).To(BeComparableTo(Plan{
+				Blocked{
+					app:       "wget",
+					entryPath: "/home/dwr/.wgetrc",
+					obstacle: "/home/dwr/.config/wget already exists and is not a " +
+						"directory",
+				},
+			}, actionFields()))
+		})
+	})
+
 	Context("when an entry belongs to an app that cannot be relocated", func() {
 		It("should skip the entry and say what stands in the way", func() {
 			// Given an entry of an app that cannot be relocated at all
 			entries := []Entry{{Path: "/home/dwr/.bashrc"}}
 
 			// When building the plan
-			actions := Build(Survey{entries: entries}, map[xdg.Target]bool{})
+			actions := Build(Survey{entries: entries}, map[xdg.Target]TargetState{})
 
 			// Then the entry stays where it is, stating the obstacle
 			Expect(actions).To(BeComparableTo(Plan{
@@ -212,7 +247,7 @@ var _ = Describe("Build", func() {
 			entries := []Entry{{Path: "/home/dwr/.foorc"}}
 
 			// When building the plan
-			actions := Build(Survey{entries: entries}, map[xdg.Target]bool{})
+			actions := Build(Survey{entries: entries}, map[xdg.Target]TargetState{})
 
 			// Then the entry is listed, with no app and nothing to do
 			Expect(actions).To(BeComparableTo(Plan{
@@ -229,6 +264,7 @@ var _ = Describe("Build", func() {
 				{Path: "/home/dwr/.foorc"},
 				{Path: "/home/dwr/.gitconfig"},
 				{Path: "/home/dwr/.bashrc"},
+				{Path: "/home/dwr/.lesshst"},
 			}
 			survey := Survey{
 				entries: entries,
@@ -243,16 +279,24 @@ var _ = Describe("Build", func() {
 						Entry:  entries[2],
 						Target: "/home/dwr/.config/git/config",
 					},
+					{
+						Rule:   lessRule(),
+						Entry:  entries[4],
+						Target: "/home/dwr/.local/state/less/history",
+					},
 				},
 			}
-			occupied := map[xdg.Target]bool{
-				"/home/dwr/.config/wget/wgetrc": true,
+			states := map[xdg.Target]TargetState{
+				"/home/dwr/.config/wget/wgetrc": TargetOccupied{},
+				"/home/dwr/.local/state/less/history": TargetBlocked{
+					Blocker: "/home/dwr/.local/state/less",
+				},
 			}
 
 			// When building the plan
-			actions := Build(survey, occupied)
+			actions := Build(survey, states)
 
-			// Then the apps read in name order, and what none owns trails them
+			// Then the apps are listed alphabetically, with unmanaged ones at the end
 			Expect(actions).To(BeComparableTo(Plan{
 				Unsupported{
 					app:       "bash",
@@ -263,6 +307,12 @@ var _ = Describe("Build", func() {
 					app:       "git",
 					entryPath: "/home/dwr/.gitconfig",
 					target:    "/home/dwr/.config/git/config",
+				},
+				Blocked{
+					app:       "less",
+					entryPath: "/home/dwr/.lesshst",
+					obstacle: "/home/dwr/.local/state/less already exists and " +
+						"is not a directory",
 				},
 				Occupied{
 					app:       "wget",
@@ -302,7 +352,7 @@ var _ = Describe("Build", func() {
 			}
 
 			// When building the plan
-			actions := Build(survey, map[xdg.Target]bool{})
+			actions := Build(survey, map[xdg.Target]TargetState{})
 
 			// Then the entry whose name sorts first leads
 			Expect(actions).To(BeComparableTo(Plan{
@@ -340,7 +390,7 @@ var _ = Describe("Build", func() {
 			}
 
 			// When building the plan
-			actions := Build(survey, map[xdg.Target]bool{})
+			actions := Build(survey, map[xdg.Target]TargetState{})
 
 			// Then they trail the app, reading in name order themselves
 			Expect(actions).To(BeComparableTo(Plan{
@@ -375,7 +425,7 @@ var _ = Describe("Build", func() {
 
 			// When building the plan
 			build := func() {
-				Build(survey, map[xdg.Target]bool{})
+				Build(survey, map[xdg.Target]TargetState{})
 			}
 
 			// Then the entry is not left out of the plan silently
@@ -443,7 +493,7 @@ var _ = Describe("Rules", func() {
 // actionFields lets cmp read the fields an action keeps unexported.
 func actionFields() cmp.Option {
 	return cmp.AllowUnexported(
-		Move{}, Symlink{}, Occupied{}, Unsupported{}, Unmanaged{},
+		Move{}, Symlink{}, Occupied{}, Blocked{}, Unsupported{}, Unmanaged{},
 	)
 }
 
