@@ -167,7 +167,7 @@ func (s Symlink) EntryPath() string { return s.entryPath }
 // Target returns the path the entry relocates to.
 func (s Symlink) Target() xdg.Target { return s.target }
 
-// Occupied skips the entry, because something already sits at its target.
+// Occupied skips the entry, because something already exists at its target.
 type Occupied struct {
 	app       string
 	entryPath string
@@ -183,8 +183,28 @@ func (o Occupied) App() (string, bool) { return o.app, true }
 // EntryPath implements Action.
 func (o Occupied) EntryPath() string { return o.entryPath }
 
-// Target returns the occupied path, which is what the user has to decide about.
+// Target returns the occupied path, which is what the user has to act on.
 func (o Occupied) Target() xdg.Target { return o.target }
+
+// Blocked skips the entry, because a regular file exists on the path where the
+// target's parent directories need to be. The obstacle specifies the file.
+type Blocked struct {
+	app       string
+	entryPath string
+	obstacle  string
+}
+
+// isAction implements Action.
+func (Blocked) isAction() {}
+
+// App implements Action.
+func (b Blocked) App() (string, bool) { return b.app, true }
+
+// EntryPath implements Action.
+func (b Blocked) EntryPath() string { return b.entryPath }
+
+// Obstacle returns what stands between the entry and its target.
+func (b Blocked) Obstacle() string { return b.obstacle }
 
 // Unsupported skips the entry, because its app cannot be relocated at all. The
 // obstacle says what stands in the way, since no rule will ever claim it.
@@ -228,58 +248,110 @@ func (u Unmanaged) EntryPath() string { return u.entryPath }
 // on disk until it is applied.
 type Plan []Action
 
+// TargetState is what a probe found standing between an entry and its target.
+//
+//sumtype:decl
+type TargetState interface {
+	// Sealed interface in combination with sumtype:decl
+	isTargetState()
+}
+
+// TargetOccupied reports that something already exists at the target.
+type TargetOccupied struct{}
+
+// isTargetState implements TargetState.
+func (TargetOccupied) isTargetState() {}
+
+// TargetBlocked reports that a regular file exists where one of the target's
+// parent directories would have to be, with Blocker naming that file.
+type TargetBlocked struct {
+	Blocker string
+}
+
+// isTargetState implements TargetState.
+func (TargetBlocked) isTargetState() {}
+
 // Build derives the action every entry in the survey calls for, using the
-// occupied map to tell free targets from ones already taken. It panics on a
-// rule declaring a relocation this package does not define, which only a change
-// to the compiled-in rules list can cause.
-func Build(survey Survey, occupied map[xdg.Target]bool) Plan {
+// probed states to tell the entries with a free target from the ones the plan
+// has to skip. It panics on a rule declaring an unknown relocation.
+func Build(survey Survey, states map[xdg.Target]TargetState) Plan {
 	actions := make([]Action, 0, len(survey.entries))
 
-	actions = append(actions, relocations(survey, occupied)...)
+	actions = append(actions, relocations(survey, states)...)
 	actions = append(actions, skips(survey)...)
 
 	return ordered(actions)
 }
 
 // relocations derives the action for every entry covered by a candidate.
-func relocations(survey Survey, occupied map[xdg.Target]bool) []Action {
-	relocationFor := func(candidate Candidate, _ int) Action {
-		rule := candidate.Rule
-		entryPath := candidate.Entry.Path
-
-		if occupied[candidate.Target] {
-			return Occupied{
-				app:       rule.App,
-				entryPath: entryPath,
-				target:    candidate.Target,
-			}
+func relocations(survey Survey, states map[xdg.Target]TargetState) []Action {
+	actionFor := func(candidate Candidate, _ int) Action {
+		if skip, skipped := checkRelocationSkip(candidate, states); skipped {
+			return skip
 		}
 
-		switch rule.Relocation {
-		case RelocationMove:
-			return Move{
-				app:       rule.App,
-				entryPath: entryPath,
-				target:    candidate.Target,
-			}
-
-		case RelocationSymlink:
-			return Symlink{
-				app:       rule.App,
-				entryPath: entryPath,
-				target:    candidate.Target,
-			}
-
-		default:
-			panic(fmt.Sprintf("rule for %q declares unknown relocation %q",
-				rule.App, rule.Relocation))
-		}
+		return relocationFor(candidate)
 	}
 
-	return lo.Map(survey.candidates, relocationFor)
+	return lo.Map(survey.candidates, actionFor)
 }
 
-// skips derives the action for every entry no candidate covers.
+// checkRelocationSkip returns the action that skips the entry when the state
+// probed at its target stops it from relocating, and whether a state does.
+func checkRelocationSkip(
+	candidate Candidate, states map[xdg.Target]TargetState,
+) (Action, bool) {
+	rule := candidate.Rule
+	entryPath := candidate.Entry.Path
+
+	switch state := states[candidate.Target].(type) {
+	case TargetOccupied:
+		return Occupied{
+			app:       rule.App,
+			entryPath: entryPath,
+			target:    candidate.Target,
+		}, true
+
+	case TargetBlocked:
+		return Blocked{
+			app:       rule.App,
+			entryPath: entryPath,
+			obstacle: fmt.Sprintf("%s already exists and is not a directory",
+				state.Blocker),
+		}, true
+	}
+
+	return nil, false
+}
+
+// relocationFor returns the relocation the candidate's rule declares. It panics
+// on a rule declaring an unknown relocation.
+func relocationFor(candidate Candidate) Action {
+	rule := candidate.Rule
+	entryPath := candidate.Entry.Path
+
+	switch rule.Relocation {
+	case RelocationMove:
+		return Move{
+			app:       rule.App,
+			entryPath: entryPath,
+			target:    candidate.Target,
+		}
+
+	case RelocationSymlink:
+		return Symlink{
+			app:       rule.App,
+			entryPath: entryPath,
+			target:    candidate.Target,
+		}
+
+	default:
+		panic(fmt.Sprintf("rule for %q declares unknown relocation %q",
+			rule.App, rule.Relocation))
+	}
+}
+
+// skips derives the action for every unclaimed entry.
 func skips(survey Survey) []Action {
 	claimedPaths := lo.KeyBy(survey.candidates, func(candidate Candidate) string {
 		return candidate.Entry.Path
@@ -291,23 +363,31 @@ func skips(survey Survey) []Action {
 		})
 
 	skipFor := func(entry Entry, _ int) (Action, bool) {
-		if _, isClaimed := claimedPaths[entry.Path]; isClaimed {
-			return nil, false
-		}
-
-		unsupported, named := unsupportedEntries[entry.Name()]
-		if !named {
-			return Unmanaged{entryPath: entry.Path}, true
-		}
-
-		return Unsupported{
-			app:       unsupported.App,
-			entryPath: entry.Path,
-			obstacle:  unsupported.Obstacle,
-		}, true
+		return checkUnclaimedSkip(entry, claimedPaths, unsupportedEntries)
 	}
 
 	return lo.FilterMap(survey.entries, skipFor)
+}
+
+// checkUnclaimedSkip returns the action that skips an entry no rule claims,
+// and whether no rule claims it.
+func checkUnclaimedSkip(entry Entry,
+	claimedPaths map[string]Candidate,
+	unsupportedEntries map[string]unsupportedApp) (Action, bool) {
+	if _, isClaimed := claimedPaths[entry.Path]; isClaimed {
+		return nil, false
+	}
+
+	unsupported, named := unsupportedEntries[entry.Name()]
+	if !named {
+		return Unmanaged{entryPath: entry.Path}, true
+	}
+
+	return Unsupported{
+		app:       unsupported.App,
+		entryPath: entry.Path,
+		obstacle:  unsupported.Obstacle,
+	}, true
 }
 
 // unsupportedApp names one entry of an app that cannot be relocated at all,

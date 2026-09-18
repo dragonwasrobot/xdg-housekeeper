@@ -281,11 +281,14 @@ const (
 ```
 
 Variants carrying differing payloads get a sealed interface, closed by an
-unexported method. Keep each variant's fields unexported and reach them through
-accessors, so a fact every variant carries can live on the interface rather
-than in a type switch. Name them as the domain language already does —
-`EntryPath` is `Entry.Path`, `Target` is `Candidate.Target` — never a fresh
-`From`/`To` pair for a path named elsewhere:
+unexported method. Keep the fields of a variant the package **returns**
+unexported and reach them through accessors, so nothing outside can fabricate
+one and a fact every variant carries can live on the interface rather than in a
+type switch. A variant the package **accepts** exports its fields instead: a
+caller has to construct it, and Go cannot stop a zero-value composite literal,
+so a constructor there is ceremony rather than a constraint. Name them as the
+domain language already does — `EntryPath` is `Entry.Path`, `Target` is
+`Candidate.Target` — never a fresh `From`/`To` pair for a path named elsewhere:
 
 ```go
 // The directive is what makes gochecksumtype check switches over it — a
