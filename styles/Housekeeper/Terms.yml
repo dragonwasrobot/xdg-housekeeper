@@ -16,3 +16,5 @@ swap:
   skip kind: skip reason
   skip type: skip reason
   soft link: symlink
+  walk: traverse
+  walking: traversing

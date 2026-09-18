@@ -41,6 +41,11 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   `/Users/<username>` or similar.
 - **entry**: a dot-prefixed file or directory sitting directly in `HOME`, e.g.
   `.docker/` or `.zsh_history`.
+- **traverse**: the act of scanning the *home* directory for *entries*, and the
+  only way they act as input to the tool. The scan is one level deep and filters
+  only dot-prefixed entries; an XDG *base directory* is never itself an entry,
+  nor is a directory holding one below it, as `.local` does with the data and
+  state base directories at their defaults.
 - **XDG variable**: one of the four environment variables the specification
   defines: `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
   `XDG_CACHE_HOME`. Each variable specifies the *base directory* of one
@@ -63,10 +68,10 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   and `.claude/`.
 - **unsupported app**: an *app* whose *entries* cannot be relocated at all, so
   no *rule* ever claims them. Declared in its own list beside the *rules*, one
-  item per *entry* the app owns, each item specifying an *obstacle*.
+  element per *entry* the app owns, each element specifying an *obstacle*.
 - **obstacle**: what stands in the way of relocating an *entry*, specified in
   the *action* so the *plan* says why it skipped it. An *unsupported app*
-  declares its own; a *blocked target* specifies the file in the way.
+  declares its own; a *blocked target* renders its *blocker* into one.
 - **claim**: what a *rule* does to the one *entry* it names. Every rule claims
   exactly one entry, and every entry is claimed by at most one rule; an entry no
   rule claims is *unsupported* when an *unsupported app* owns it, and
@@ -78,16 +83,21 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   that base directory. Always produces a failure, never a warning. A *location*
   outside the four the specification defines is not one of these: the four are
   compiled in, so naming another is programmer error, and it panics.
+- **probe**: the act of checking the filesystem for anything that stands between
+  an entry and its *target*, which may result in either an *occupied target* or
+  a *blocked target*. A target is free when nothing was found.
 - **occupied target**: a *target* where a file already exists in its *base
   directory* location, leaving the *entry* nowhere to relocate to. Always
   produces a skip, and is one of the two *skip reasons* the user has to act on,
   with a *blocked target* being the other, so the *plan*'s summary spells it out
   separately.
-- **blocked target**: a *target* nothing can be placed at, because a regular
-  file exists where one of its parent directories would have to be. Nothing
-  exists at the target itself, so it is not an *occupied target*; the *obstacle*
-  specifies the file in the way. Detected while the *plan* is built, rather than
-  left to surface when it is applied.
+- **blocked target**: a *target* nothing can be placed at, because a
+  non-directory exists where one of its parent directories would have to be.
+  Usually a regular file, though a socket, a device node, or a *symlink*
+  pointing at nothing also acts a blocks. Nothing exists at the target itself,
+  so it is not an *occupied target*; the *blocker* is the file in the way.
+- **blocker**: the file a *probe* found standing in the way of a *target*'s
+  parent chain, captured by the *blocked target*.
 - **relocation**: how a *rule* relocates its *entry*: either by moving it
   outright, or by moving it and leaving a *symlink* behind. The rule declares
   it, the *plan* carries it out; a *move* rule yields a *move* *action*.

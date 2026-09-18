@@ -210,7 +210,7 @@ var _ = Describe("Build", func() {
 			// When building the plan
 			actions := Build(survey, states)
 
-			// Then the entry stays where it is, and the obstacle reads as prose
+			// Then the entry stays where it is, and the obstacle describes the reason
 			Expect(actions).To(BeComparableTo(Plan{
 				Blocked{
 					app:       "wget",

@@ -16,11 +16,13 @@ const
 diffable
 env
 errno
+fsys
 func
 gofmt
 goroutines
 hardcoded
 jq
+Lstat
 memoized
 mutexes
 repo

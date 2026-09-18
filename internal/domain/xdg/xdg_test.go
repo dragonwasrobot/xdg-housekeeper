@@ -206,8 +206,7 @@ var _ = Describe("Target", func() {
 			// When resolving an otherwise valid path against a location
 			// outside the four the specification defines
 			resolve := func() {
-				// it panics before it can return an error
-				//nolint:errcheck
+				//nolint:errcheck // it panics before it can return an error
 				baseDirs.Target("git/config", Location(""))
 			}
 

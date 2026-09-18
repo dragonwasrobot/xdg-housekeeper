@@ -118,7 +118,6 @@ func rules() []Rule {
 //
 //sumtype:decl
 type Action interface {
-	// Sealed interface in combination with sumtype:decl
 	isAction()
 
 	// App returns the optional app that owns the entry.
@@ -186,8 +185,8 @@ func (o Occupied) EntryPath() string { return o.entryPath }
 // Target returns the occupied path, which is what the user has to act on.
 func (o Occupied) Target() xdg.Target { return o.target }
 
-// Blocked skips the entry, because a regular file exists on the path where the
-// target's parent directories need to be. The obstacle specifies the file.
+// Blocked skips the entry, because a non-directory exists on the path where
+// the target's parent directories need to be. The obstacle specifies the file.
 type Blocked struct {
 	app       string
 	entryPath string
@@ -252,7 +251,6 @@ type Plan []Action
 //
 //sumtype:decl
 type TargetState interface {
-	// Sealed interface in combination with sumtype:decl
 	isTargetState()
 }
 
@@ -262,7 +260,7 @@ type TargetOccupied struct{}
 // isTargetState implements TargetState.
 func (TargetOccupied) isTargetState() {}
 
-// TargetBlocked reports that a regular file exists where one of the target's
+// TargetBlocked reports that a non-directory exists where one of the target's
 // parent directories would have to be, with Blocker naming that file.
 type TargetBlocked struct {
 	Blocker string
@@ -296,8 +294,8 @@ func relocations(survey Survey, states map[xdg.Target]TargetState) []Action {
 	return lo.Map(survey.candidates, actionFor)
 }
 
-// checkRelocationSkip returns the action that skips the entry when the state
-// probed at its target stops it from relocating, and whether a state does.
+// checkRelocationSkip returns the action that skips the entry when the probe
+// state stops it from relocating. Returns nil otherwise.
 func checkRelocationSkip(
 	candidate Candidate, states map[xdg.Target]TargetState,
 ) (Action, bool) {
@@ -324,8 +322,8 @@ func checkRelocationSkip(
 	return nil, false
 }
 
-// relocationFor returns the relocation the candidate's rule declares. It panics
-// on a rule declaring an unknown relocation.
+// relocationFor returns the action for the relocation the candidate's rule
+// declares. It panics on a rule declaring an unknown relocation.
 func relocationFor(candidate Candidate) Action {
 	rule := candidate.Rule
 	entryPath := candidate.Entry.Path
@@ -369,8 +367,8 @@ func skips(survey Survey) []Action {
 	return lo.FilterMap(survey.entries, skipFor)
 }
 
-// checkUnclaimedSkip returns the action that skips an entry no rule claims,
-// and whether no rule claims it.
+// checkUnclaimedSkip returns the action that skips an entry no rule claims, and
+// whether no rule claims it.
 func checkUnclaimedSkip(entry Entry,
 	claimedPaths map[string]Candidate,
 	unsupportedEntries map[string]unsupportedApp) (Action, bool) {

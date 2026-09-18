@@ -3,9 +3,7 @@
 ## Development workflow
 
 Work proceeds in tight cycles, with the developer reading the diff at the end
-of each one. The skills below hold the detail — numbered steps, verification
-commands, worked examples, what each loop forbids. What is stated here is only
-what binds *before* a skill loads.
+of each one. Only what binds *before* a skill loads is stated here.
 
 - **New behavior → the `feature` skill.** Development is test-first (**Red →
   Green → Blue**): **never write production code without a failing test
@@ -29,16 +27,16 @@ internal/
     xdg/                package xdg  — XDG base-directory spec knowledge
     plan/               package plan — building a housekeeping plan
   infra/                the imperative shell: the only place the world is touched
-    fsys/               package fsys — walking and moving files
+    fsys/               package fsys — traversing and moving files
     cli/                package cli  — argv parsing
 ```
 
 Directories carry the **layer**; package names carry the **concern**. So call
-sites read `plan.Claim(entries, baseDirs)` and `fsys.Walk(root)`, never
-`domain.PlanCandidates(...)`. Add packages under a layer as concerns appear;
-never add a package named for a layer, a pattern, or a catch-all (`util`,
-`common`, `helpers`) — if a new package's one-concern sentence is hard to
-write, it shouldn't exist yet.
+sites read `plan.Claim(entries, baseDirs)` and `fsys.Traverse(home, baseDirs)`,
+never `domain.PlanCandidates(...)`. Add packages under a layer as concerns
+appear; never add a package named for a layer, a pattern, or a catch-all
+(`util`, `common`, `helpers`) — if a new package's one-concern sentence is
+hard to write, it shouldn't exist yet.
 
 Dependency direction is one-way: **nothing under `internal/infra/` may import
 anything under `internal/domain/`.** `main` wires the two together — it calls
@@ -47,9 +45,8 @@ again to write the results back. This is not just convention here: `depguard`
 in `.golangci.yml` enforces it on the import path, so a violation fails
 `golangci-lint run`.
 
-`internal/` itself is enforced by the Go toolchain — code under it is
-importable only from within this module — so these packages carry no
-compatibility obligation to anyone outside the repo and can be reshaped freely.
+Nothing under `internal/` carries a compatibility obligation to anyone outside
+the repo, so reshape it freely.
 
 **Probe in `scratchpad/`, not a temp directory outside the repo.** It is
 git-ignored and holds throwaway probes — a file that deliberately trips a
@@ -58,26 +55,14 @@ is assumed to. **Point the checker at the repo's own config, never a copy of
 the rules**; a hand-written config confirms only what the copy catches.
 
 A probe must stay invisible to `mise run verify`. For Go, give `scratchpad/`
-its own `go.mod` — a nested module is invisible to `./...`, while
-`golangci-lint` run from inside still walks up to the repo's real
-`.golangci.yml`; without it a probe joins the main module and breaks the repo's
-own checks. For a checker fed by `git ls-files`, git-ignoring is already
+its own `go.mod`; for a checker fed by `git ls-files`, git-ignoring is already
 enough.
-
-A snippet headed by a file path — `// internal/domain/xdg/xdg.go` — is real
-code, quoted from the package as it stands. The rest are sketches, because
-`internal/infra` and `main` have not landed. As each one does, replace its
-sketch with the real thing under its own path comment.
 
 ## Guiding principles
 
 The principle that outranks the rest: optimize for the next reader. A clever
 one-liner that costs five minutes of head-scratching loses to the boring
-version.
-
-Throughout this file, a rule that names a linter is one `mise run verify`
-catches before review does. Everything else — every rule that names none, and
-every clause reaching past what its linter is said to cover — is caught only by
+version. A rule naming a linter is caught by `mise run verify`; the rest, by
 reading the diff.
 
 ### Reading the code
@@ -87,16 +72,14 @@ reading the diff.
   `wsl_v5` enforces the exact shape and auto-fixes it.
 - **Keep a line inside 80 columns**, so code sits beside the prose describing
   it — the same width `scripts/check-doc-width` holds Markdown to. `lll`
-  enforces it, exempting the line that opens a Ginkgo container, spec, or table
-  entry, whose description is a sentence that cannot wrap. Spec bodies stay
-  held to the limit, and a long `Entry` wraps its arguments.
+  enforces it.
 - **Declare callers above callees.** If function A calls function B, declare A
   above B — same for unexported helpers. A type goes above the functions that
   build it. The reader sees intent before mechanism.
-- **Prefer short functions.** 40 LOC is the ceiling, and `funlen` enforces it.
-  The real concern is single responsibility: treat approaching the ceiling as a
-  signal the function is doing several things, and extract named helpers before
-  adding more.
+- **Prefer short functions.** `funlen` enforces a 40 LOC ceiling, but the real
+  concern is single responsibility: treat approaching it as a signal the
+  function is doing several things, and extract named helpers before adding
+  more.
 - **Express a collection transformation with a helper from `lo`.**
   `lo.FilterMap`, `lo.Filter`, `lo.Reject`, and `lo.KeyBy` say what a `for`
   leaves implicit in its `continue`s, and a named callback keeps the predicate
@@ -139,20 +122,15 @@ reading the diff.
   resolved destination path is an `xdg.Target` and the base directory it
   belongs in is an `xdg.Location`, never a pair of `string`s; if a function
   takes three `bool`s, it wants an options struct.
-- **Put the constraint in the type.** §Modelling data gives the rules — finite
-  variants, impossible states, real absence, value semantics — and the two
-  encodings for a fixed set of variants.
 - **No naked returns.** Name result parameters only when they document an
   otherwise-ambiguous same-typed pair, or when a deferred closure must set the
   error — capturing a write-side `Close` failure is the case that wants it.
   Return values explicitly even then. `nakedret` enforces it.
-- **Return `(T, error)` for expected failures; `panic` only for the
-  unrecoverable.** §Error handling gives the whole chain.
 - **An `error`-only return is for an operation whose entire result is whether
-  it happened.** `os.Rename` and `io.Closer` are shaped that way, and an
-  `internal/infra` mover will be too. What it must not do is swallow a result
-  the caller then has to recompute: when the operation determined a status, a
-  count, or a path, return it.
+  it happened.** `os.Rename`, `io.Closer` and `fsys.Move` are shaped that way.
+  What such a return must not do is swallow a result the caller then has to
+  recompute: when the operation determined a status, a count, or a path,
+  return it.
 
 ### Boundaries
 
@@ -177,14 +155,11 @@ reading the diff.
   assertion.
 - **Compose structs across package boundaries; embed them only within one.** A
   struct holds another package's struct as a named field rather than embedding
-  it, so a change there can't ripple outward through an embedding chain: every
-  field of an embedded struct silently joins the outer type's API, and renaming
-  one breaks callers that never mentioned that package. The stdlib is not
-  exempt — `sync.Mutex` is the embedding Go reaches for by reflex, and the
-  concurrency rule below is what keeps it from coming up here. Embedding a
-  struct is fine within a package. Interfaces are the exception at every
-  boundary: embedding is how they compose, and a decorator embeds the interface
-  it wraps so it can override one method and inherit the rest.
+  it, so a change there can't ripple outward through an embedding chain.
+  Embedding a struct is fine within a package. Interfaces are the exception at
+  every boundary:
+  embedding is how they compose, and a decorator embeds the interface it wraps
+  so it can override one method and inherit the rest.
 - **Validate untrusted input once, at the edge that reads it.** Flag parsing,
   environment reads, and file contents are where a value gets checked; nothing
   deeper repeats that check. A function still rejects what only it can judge —
@@ -235,9 +210,6 @@ reading the diff.
   for a second call site to actually land.
 
 ## Modelling data
-
-Rules for the shape of a value, then the two encodings for a type with a fixed
-set of variants.
 
 - **Make impossible states unrepresentable.** Where a constraint can live in
   the type, put it there: `xdg.BaseDirs` keeps unexported fields behind
@@ -291,14 +263,13 @@ domain language already does — `EntryPath` is `Entry.Path`, `Target` is
 `Candidate.Target` — never a fresh `From`/`To` pair for a path named elsewhere:
 
 ```go
-// The directive is what makes gochecksumtype check switches over it — a
-// sealed interface without it is unchecked.
-//
+// internal/domain/plan/plan.go — abridged
+
 //sumtype:decl
 type Action interface {
     isAction()
 
-    // App returns the app that owns the entry, and whether any app does.
+    // App returns the optional app that owns the entry.
     App() (string, bool)
 
     // EntryPath returns the path in home of the entry this action covers.
@@ -321,12 +292,14 @@ func (m Move) EntryPath() string { return m.entryPath }
 // Target returns the path the entry relocates to.
 func (m Move) Target() xdg.Target { return m.target }
 
-// Unmanaged skips the entry, because no rule claims it — so it has no app.
+// Unmanaged skips the entry, because no rule claims it. It names no app,
+// since nothing here knows which app the entry belongs to.
 type Unmanaged struct {
     entryPath string
 }
 
-// App implements Action, reporting false: nothing here knows its app.
+// App implements Action, reporting false: no rule claims the entry and no app
+// is known to own it.
 func (u Unmanaged) App() (string, bool) { return "", false }
 
 // EntryPath implements Action.
@@ -336,24 +309,21 @@ func (Move) isAction()      {}
 func (Unmanaged) isAction() {}
 ```
 
-Two of the five variants; `PLAN.md` holds the rest. One variant per case, never
-a single `Skip` carrying a reason: the payloads differ, so one struct could only
-hold their union, and `Unmanaged` — which has neither app nor target — would
-leave both fields empty. That is the optional-field lie §Modelling data forbids.
+Two variants of several. One variant per case, never a single `Skip` carrying a
+reason: the payloads differ, so one struct could only hold their union, and
+`Unmanaged` — which has neither app nor target — would leave both fields empty.
+That is the optional-field lie §Modelling data forbids.
 
 A value **every** variant carries goes on the interface, where a forgotten
 variant is a compile error rather than a lint finding; `App` returns
 `(string, bool)` because an unmanaged entry has none, and an empty string would
 be the same lie. A value only some variants carry stays a plain accessor on
 those. Document the contract on the interface method and write
-`// X implements Action.` on each variant — `revive` demands a comment on every
-exported method, so the repetition can go but the comment cannot.
+`// X implements Action.` on each variant.
 
 Branch on either with `switch`, never an `if`/`else` chain. Adding a variant
-must break every switch that ignores it, and
-`default-signifies-exhaustive: false` in `.golangci.yml` is what secures that:
-a `default` clause never excuses a missing case, so `exhaustive` and
-`gochecksumtype` go on demanding every variant be listed.
+must break every switch that ignores it, and a `default` clause never excuses
+a missing case.
 
 The two forms want opposite endings. A typed constant is not closed at run
 time — `Location("bogus")` is representable, and a bare `switch` matching
@@ -394,13 +364,13 @@ panics. A sealed interface is closed by its unexported method, so omit
   not the point: a raw `*os.PathError` or errno crossing out of
   `internal/infra` is an implementation detail, and `%w` there commits to it
   forever. A deliberate `%v` in a wrap carries `//nolint:errorlint // …` naming
-  the detail being kept in.
+  the detail being kept in; `nolintlint` enforces that the reason is there, not
+  that it says anything.
 - Callers branch with `errors.Is` for identity and `errors.As` when they need
   data out of the failure; a failure carrying data wants its own error type.
   Never compare `err.Error()` strings — `errorlint` catches `==` against a
   sentinel, the string comparison it won't.
 - Never discard an error; `errcheck` and `ineffassign` enforce it.
-- Return it or log it, never both — see §Logging conventions.
 - `panic` is for violated invariants and programmer error, never for bad input.
 - `main` is the dispatcher: it unwraps the chain, writes a message to stderr,
   and exits non-zero. It is the only place that chooses an exit code.
@@ -470,11 +440,9 @@ if errors.Is(err, xdg.ErrInvalidTarget) {
   `internal/domain` and `internal/infra` return errors — they do not log them.
   A failure logged where it happens *and* returned gets reported twice, and the
   duplicate is the one without the surrounding context.
-- **Message shape.** Use the structured key/value form, not interpolation: a
-  constant human-readable message, then the dynamic values as attributes. The
-  message is what you grep for; the attributes are what you filter on.
-  `sloglint` enforces both halves — `kv-only` for the attribute form,
-  `static-msg` for the constant message.
+- **Message shape.** `sloglint` enforces the structured key/value form over
+  interpolation: the message is what you grep for, the attributes are what you
+  filter on.
 
   ```go
   slog.Debug("parsed arguments", "args", args)

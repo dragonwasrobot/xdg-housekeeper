@@ -15,6 +15,7 @@ linters:
     - lll # §Guiding principles: the 80-column ceiling
     - misspell # spelling, in comments and strings alike
     - nakedret # §Guiding principles: no naked returns
+    - nolintlint # §Error handling: a nolint must include the check and explanation
     - revive # §Guiding principles: doc comments, ctx first
     - sloglint # §Logging conventions: structured key/value form
     # Neither fires on a Ginkgo spec, which has no *testing.T in scope. Kept as
@@ -76,6 +77,11 @@ linters:
     nakedret:
       # Any naked return, in a function of any length.
       max-func-lines: 0
+
+    nolintlint:
+      # Using //nolint must include the check and a suppression explanation.
+      require-explanation: true
+      require-specific: true
 
     revive:
       rules:
