@@ -33,8 +33,11 @@ The cycle for each behavior:
    a new exported identifier, an error wrapped with `%v` where its identity
    needed to survive or returned without context, a bare `any`, a primitive
    standing in for a domain type, functions approaching the ~40 LOC ceiling, an
-   unnamed multi-clause conditional, declaration order, whitespace. Refactor
-   before moving on.
+   unnamed multi-clause conditional, declaration order, whitespace. The spec is
+   in the diff too — review it against the `testing` skill, loaded at step 3.
+   Blue only compresses what is already green: folding passing specs into a
+   table belongs here; a new row does not — its behavior never went Red, so it
+   is a step 3 of its own. Refactor before moving on.
 6. **Verification** — run this before moving on:
 
    ```sh

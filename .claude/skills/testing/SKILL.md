@@ -75,13 +75,15 @@ package under test rather than an external `_test` package, because specs
 construct `BaseDirs{config: …}` and call unexported `rules()`.
 
 **Table-driven tests are the exception, not the default.** The plain form above
-is what a new test looks like; a table is what one occasionally becomes. Reach
-for it only when all three hold: the unit is a pure input→output function; every
-row exercises **one** behavior already pinned by its own Red → Green cycle; and
-the rows differ in *data* only — not in shape, setup, or which assertion runs.
-Resolving the same path against each XDG location fits. Anything where a row
-needs its own `if` in the shared body, or carries a `wantErr` alongside rows
-that want a value, does not — that is two behaviors, and it wants two specs.
+is what a new test looks like; a table is what one occasionally becomes — a
+third sibling spec whose assertion block differs only in an input literal is
+the signal to consider one. Reach for it only when all three hold: the unit is
+a pure input→output function, not one staging a filesystem; every row exercises
+**one** behavior already pinned by its own Red → Green cycle; and the rows
+differ in *data* only — not in shape, setup, or which assertion runs. Resolving
+the same path against each XDG location fits. Anything where a row needs its
+own `if` in the shared body, or carries a `wantErr` alongside rows that want a
+value, does not — that is two behaviors, and it wants two specs.
 
 ```go
 // see internal/domain/xdg/xdg_test.go
@@ -130,6 +132,13 @@ behavior holds, the condition goes in a `Context` and each row starts `because`:
 Target when the path does not point inside its base directory
   should refuse to name a target at all because it is absolute
 ```
+
+Write those `because` rows out before committing to the fold, because the word
+also tests it: a row that wants *even when* instead is not a reason the
+behavior holds but a robustness claim about a neighbouring one, and it stays
+its own spec. Folding `Resolve`'s two absolute-path specs would have read
+*because every variable is absolute* against *even when a path carries doubled
+or trailing separators* — so they stayed two specs.
 
 A table compresses behavior *already* driven out test-first; it never
 substitutes for the cycle. A row for genuinely new behavior gets its own
@@ -294,3 +303,10 @@ line instead of the helper's. For a pure function that only reads a filesystem,
   propagation in both directions, derived values — is where regressions land.
   Pure helpers are easy to test and tempting to over-test while orchestrators
   are harder and quietly skipped; resist that asymmetry.
+- **Ask whether the spec would fail if the code it covers were deleted.** A
+  spec that passes either way pins nothing: a `ContainSubstring` matching a
+  word the surrounding prose also uses, or a second spec reaching the same
+  branch by another route. Red → Green already answers this for a spec written
+  before its code, so the question is for one arriving after: an appended
+  assertion, a folded row, a spec covering code that was already green. Break
+  the code on purpose and watch it go red.
