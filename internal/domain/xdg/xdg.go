@@ -16,7 +16,7 @@ var ErrInvalidHome = errors.New("home directory is not an absolute path")
 
 // ErrInvalidTarget reports that a location and relative path name no target:
 // the relative path is actually absolute, or it resolves outside its location's
-// base directory, or the location is not one this package defines.
+// base directory.
 var ErrInvalidTarget = errors.New("target is not inside an XDG base directory")
 
 // Location specifies which XDG base directory an entry belongs in.

@@ -260,29 +260,37 @@ var _ = Describe("Symlink", func() {
 })
 
 var _ = Describe("Move", func() {
-	var homePath string
+	var (
+		entryPath  string
+		targetPath string
+	)
 
 	BeforeEach(func() {
-		// Given a home directory
-		homePath = GinkgoT().TempDir()
+		// Given an entry in home, and a target nested below missing parents
+		homePath := GinkgoT().TempDir()
+
+		entryPath = filepath.Join(homePath, ".gitconfig")
+		targetPath = filepath.Join(homePath, ".config", "git", "config")
+
+		writeFile(entryPath)
+	})
+
+	It("should leave the entry at its target, with nothing behind", func() {
+		// When relocating the entry to its target
+		err := Move(entryPath, targetPath)
+
+		// Then the entry sits at its target, and its old path is gone
+		Expect(err).NotTo(HaveOccurred())
+		Expect(targetPath).To(BeAnExistingFile())
+		Expect(entryPath).NotTo(BeAnExistingFile())
 	})
 
 	Context("when the directories above the target do not exist yet", func() {
-		It("should create them according to the specification, and leave the entry at its target", func() {
-			// Given an entry in home, and a target nested below missing parents
-			entryPath := filepath.Join(homePath, ".gitconfig")
-			targetPath := filepath.Join(homePath, ".config", "git", "config")
-
-			writeFile(entryPath)
-
+		It("should create them as the specification asks", func() {
 			// When relocating the entry to its target
 			err := Move(entryPath, targetPath)
 
-			// Then the entry exists at its target, with nothing left behind
-			Expect(targetPath).To(BeAnExistingFile())
-			Expect(entryPath).NotTo(BeAnExistingFile())
-
-			// And directory permissions are set according to the specification
+			// Then each directory created holds the mode the specification asks
 			Expect(err).NotTo(HaveOccurred())
 
 			info, statErr := os.Stat(filepath.Dir(targetPath))

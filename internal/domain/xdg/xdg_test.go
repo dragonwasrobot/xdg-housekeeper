@@ -8,32 +8,38 @@ import (
 )
 
 var _ = Describe("Resolve", func() {
-	var defaultsUnderHome BaseDirs
-
-	BeforeEach(func() {
-		// Given the specification's default locations
-		defaultsUnderHome = BaseDirs{
-			config: "/home/dwr/.config",
-			data:   "/home/dwr/.local/share",
-			state:  "/home/dwr/.local/state",
-			cache:  "/home/dwr/.cache",
-		}
-	})
-
-	Context("when no XDG variables are set", func() {
-		It("should fall back to the specified defaults", func() {
-			// Given a home directory and no XDG variables are set
-			environment := Environment{Home: "/home/dwr"}
-
+	table.DescribeTable("should fall back to the specified defaults",
+		func(environment Environment) {
 			// When resolving the base directories
 			baseDirs, err := Resolve(environment)
 
 			// Then every location falls back to its default under home
 			Expect(err).NotTo(HaveOccurred())
-			Expect(baseDirs).To(BeComparableTo(defaultsUnderHome,
-				cmp.AllowUnexported(BaseDirs{})))
-		})
-	})
+			Expect(baseDirs).To(BeComparableTo(defaultsUnderHome(),
+				baseDirFields()))
+		},
+		table.Entry("because no XDG variables are set",
+			Environment{Home: "/home/dwr"}),
+		// The specification declares a relative path invalid.
+		table.Entry("because every variable specifies a relative path",
+			Environment{
+				Home:       "/home/dwr",
+				ConfigHome: "config",
+				DataHome:   "./data",
+				StateHome:  "../state",
+				CacheHome:  "var/tmp/dwr",
+			}),
+		// A shell expanding an unset variable can produce the root by
+		// accident, and it is no place to relocate an entry to.
+		table.Entry("because every variable specifies the filesystem root",
+			Environment{
+				Home:       "/home/dwr",
+				ConfigHome: "/",
+				DataHome:   "/",
+				StateHome:  "/",
+				CacheHome:  "/",
+			}),
+	)
 
 	Context("when every XDG variable is set to an absolute path", func() {
 		It("should take the path each variable specifies", func() {
@@ -51,12 +57,8 @@ var _ = Describe("Resolve", func() {
 
 			// Then each location takes the path its variable specifies
 			Expect(err).NotTo(HaveOccurred())
-			Expect(baseDirs).To(BeComparableTo(BaseDirs{
-				config: "/etc/dwr/config",
-				data:   "/mnt/data",
-				state:  "/var/dwr/state",
-				cache:  "/var/tmp/dwr",
-			}, cmp.AllowUnexported(BaseDirs{})))
+			Expect(baseDirs).To(BeComparableTo(dirsOutsideHome(),
+				baseDirFields()))
 		})
 	})
 
@@ -78,57 +80,8 @@ var _ = Describe("Resolve", func() {
 			// Then each location takes the directory that variable specifies,
 			// with the redundant separators gone
 			Expect(err).NotTo(HaveOccurred())
-			Expect(baseDirs).To(BeComparableTo(BaseDirs{
-				config: "/etc/dwr/config",
-				data:   "/mnt/data",
-				state:  "/var/dwr/state",
-				cache:  "/var/tmp/dwr",
-			}, cmp.AllowUnexported(BaseDirs{})))
-		})
-	})
-
-	Context("when every XDG variable is set to a relative path", func() {
-		It("should fall back to the specified defaults", func() {
-			// Given every XDG variable is set to a relative path, which the
-			// specification declares invalid
-			environment := Environment{
-				Home:       "/home/dwr",
-				ConfigHome: "config",
-				DataHome:   "./data",
-				StateHome:  "../state",
-				CacheHome:  "var/tmp/dwr",
-			}
-
-			// When resolving the base directories
-			baseDirs, err := Resolve(environment)
-
-			// Then every location falls back to its default under home
-			Expect(err).NotTo(HaveOccurred())
-			Expect(baseDirs).To(BeComparableTo(defaultsUnderHome,
-				cmp.AllowUnexported(BaseDirs{})))
-		})
-	})
-
-	Context("when every XDG variable specifies the filesystem root", func() {
-		It("should fall back to the specified defaults", func() {
-			// Given every XDG variable specifies the filesystem root, which a
-			// shell expanding an unset variable can produce by accident
-			environment := Environment{
-				Home:       "/home/dwr",
-				ConfigHome: "/",
-				DataHome:   "/",
-				StateHome:  "/",
-				CacheHome:  "/",
-			}
-
-			// When resolving the base directories
-			baseDirs, err := Resolve(environment)
-
-			// Then every location falls back to its default under home, rather
-			// than offering to relocate an entry to the root of the filesystem
-			Expect(err).NotTo(HaveOccurred())
-			Expect(baseDirs).To(BeComparableTo(defaultsUnderHome,
-				cmp.AllowUnexported(BaseDirs{})))
+			Expect(baseDirs).To(BeComparableTo(dirsOutsideHome(),
+				baseDirFields()))
 		})
 	})
 
@@ -202,7 +155,7 @@ var _ = Describe("Target", func() {
 	})
 
 	Context("when the specification does not define the location", func() {
-		It("should refuse to name a target at all", func() {
+		It("should abort rather than name a target", func() {
 			// When resolving an otherwise valid path against a location
 			// outside the four the specification defines
 			resolve := func() {
@@ -210,8 +163,32 @@ var _ = Describe("Target", func() {
 				baseDirs.Target("git/config", Location(""))
 			}
 
-			// Then it refuses to name a target at all
+			// Then the tool panics rather than reporting a failure
 			Expect(resolve).To(Panic())
 		})
 	})
 })
+
+// defaultsUnderHome returns the XDG specification's default base directories.
+func defaultsUnderHome() BaseDirs {
+	return BaseDirs{
+		config: "/home/dwr/.config",
+		data:   "/home/dwr/.local/share",
+		state:  "/home/dwr/.local/state",
+		cache:  "/home/dwr/.cache",
+	}
+}
+
+// dirsOutsideHome returns a set of base directories all pointing outside home.
+func dirsOutsideHome() BaseDirs {
+	return BaseDirs{
+		config: "/etc/dwr/config",
+		data:   "/mnt/data",
+		state:  "/var/dwr/state",
+		cache:  "/var/tmp/dwr",
+	}
+}
+
+func baseDirFields() cmp.Option {
+	return cmp.AllowUnexported(BaseDirs{})
+}

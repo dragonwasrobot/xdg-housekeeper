@@ -45,6 +45,14 @@ again to write the results back. This is not just convention here: `depguard`
 in `.golangci.yml` enforces it on the import path, so a violation fails
 `golangci-lint run`.
 
+A concept that crosses the boundary is declared on both sides — `fsys.Entry`
+and `plan.Entry`, `fsys.TargetState` and `plan.TargetState` — and converted by
+`main`, which is also where `xdg.Target` becomes a plain `string` before `fsys`
+sees it. The pairs are not duplication to collapse: each side carries what its
+own layer needs and opens the direction it is used from. If they outgrow the
+orchestration in `main`, relax `depguard` so `infra` may name a domain type;
+never add a package for the two layers to share.
+
 Nothing under `internal/` carries a compatibility obligation to anyone outside
 the repo, so reshape it freely.
 
