@@ -36,6 +36,12 @@ of traction among apps on macOS, despite the platform's own idiomatic locations
 The following terms are used consistently across functions, types, comments and
 documentation to define the domain language for the `xdg-housekeeper` tool:
 
+- **run**: one execution of the tool, from the arguments it was invoked with
+  through to the exit code it returns. A run reports the *plan* it would carry
+  out, and carries it out when asked to.
+- **command**: what a *run* was asked to do, named as the first argument that
+  is not a flag: `help`, `plan`, or `apply`. A run naming none asks for `help`,
+  so nothing is assumed about which of the others was meant.
 - **home**: the user's home directory. The root everything is resolved against.
   Defined by the `HOME` environment variable and usually of the form
   `/Users/<username>` or similar.
