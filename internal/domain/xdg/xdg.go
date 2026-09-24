@@ -36,6 +36,16 @@ const (
 	LocationCache Location = "cache"
 )
 
+// Locations returns every location the XDG specification defines.
+func Locations() []Location {
+	return []Location{
+		LocationConfig,
+		LocationData,
+		LocationState,
+		LocationCache,
+	}
+}
+
 // Environment holds the raw values a BaseDirs is resolved from: HOME and the
 // four XDG variables. An empty field stands for a variable that is not set.
 type Environment struct {
@@ -101,7 +111,7 @@ type Target string
 // relPath specifies something inside that base directory, and panics on a
 // location this package does not define.
 func (b BaseDirs) Target(relPath string, location Location) (Target, error) {
-	basePath := b.baseDir(location)
+	basePath := b.BaseDir(location)
 	targetPath := filepath.Join(basePath, relPath)
 	insideBase := !filepath.IsAbs(relPath) && within(targetPath, basePath)
 
@@ -112,9 +122,9 @@ func (b BaseDirs) Target(relPath string, location Location) (Target, error) {
 	return Target(targetPath), nil
 }
 
-// baseDir returns the base directory that location resolves to. It panics on a
-// location this package does not define.
-func (b BaseDirs) baseDir(location Location) string {
+// BaseDir returns the absolute base directory that location resolves to. It
+// panics on a location this package does not define.
+func (b BaseDirs) BaseDir(location Location) string {
 	switch location {
 	case LocationConfig:
 		return b.config

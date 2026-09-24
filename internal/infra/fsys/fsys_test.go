@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/plan"
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 )
 
 var _ = Describe("Traverse", func() {
@@ -25,13 +27,15 @@ var _ = Describe("Traverse", func() {
 			writeFile(filepath.Join(homePath, ".myapp", "settings.json"))
 			writeFile(filepath.Join(homePath, "Documents.txt"))
 
-			// And no base directories specified
+			// And base directories none of them sit at
+			baseDirs := resolvedBaseDirs(xdg.Environment{Home: homePath})
+
 			// When traversing home
-			entries, err := Traverse(homePath, nil)
+			entries, err := Traverse(homePath, baseDirs)
 
 			// Then neither the plain file nor the nested one is an entry
 			Expect(err).NotTo(HaveOccurred())
-			Expect(entries).To(BeComparableTo([]Entry{
+			Expect(entries).To(BeComparableTo([]plan.Entry{
 				{Path: filepath.Join(homePath, ".gitconfig")},
 				{Path: filepath.Join(homePath, ".myapp")},
 			}))
@@ -46,20 +50,15 @@ var _ = Describe("Traverse", func() {
 			makeDir(filepath.Join(homePath, ".cache"))
 			writeFile(filepath.Join(homePath, ".gitconfig"))
 
-			// And base directories set to the specification defaults
-			baseDirPaths := []string{
-				filepath.Join(homePath, ".config"),
-				filepath.Join(homePath, ".local", "share"),
-				filepath.Join(homePath, ".local", "state"),
-				filepath.Join(homePath, ".cache"),
-			}
+			// And no XDG variable moving any of them
+			baseDirs := resolvedBaseDirs(xdg.Environment{Home: homePath})
 
 			// When traversing home
-			entries, err := Traverse(homePath, baseDirPaths)
+			entries, err := Traverse(homePath, baseDirs)
 
 			// Then only the entry left over is returned
 			Expect(err).NotTo(HaveOccurred())
-			Expect(entries).To(BeComparableTo([]Entry{
+			Expect(entries).To(BeComparableTo([]plan.Entry{
 				{Path: filepath.Join(homePath, ".gitconfig")},
 			}))
 		})
@@ -73,14 +72,18 @@ var _ = Describe("Traverse", func() {
 			makeDir(filepath.Join(homePath, ".config"))
 			writeFile(filepath.Join(homePath, ".gitconfig"))
 
-			baseDirPaths := []string{filepath.Join(homePath, ".myconfig")}
+			// And the variable naming that directory
+			baseDirs := resolvedBaseDirs(xdg.Environment{
+				Home:       homePath,
+				ConfigHome: filepath.Join(homePath, ".myconfig"),
+			})
 
 			// When traversing home
-			entries, err := Traverse(homePath, baseDirPaths)
+			entries, err := Traverse(homePath, baseDirs)
 
 			// Then only the directories not named by the base directories are returned
 			Expect(err).NotTo(HaveOccurred())
-			Expect(entries).To(BeComparableTo([]Entry{
+			Expect(entries).To(BeComparableTo([]plan.Entry{
 				{Path: filepath.Join(homePath, ".config")},
 				{Path: filepath.Join(homePath, ".gitconfig")},
 			}))
@@ -91,9 +94,10 @@ var _ = Describe("Traverse", func() {
 		It("should report the failure rather than an empty home", func() {
 			// Given a path in place of home that does not exist
 			missingHomePath := filepath.Join(homePath, "nowhere")
+			baseDirs := resolvedBaseDirs(xdg.Environment{Home: homePath})
 
 			// When traversing home
-			entries, err := Traverse(missingHomePath, nil)
+			entries, err := Traverse(missingHomePath, baseDirs)
 
 			// Then an appropriate error is reported
 			Expect(err).To(HaveOccurred())
@@ -120,12 +124,12 @@ var _ = Describe("Probe", func() {
 			writeFile(occupiedTarget)
 
 			// When probing the targets
-			states, err := Probe([]string{occupiedTarget, freeTarget})
+			states, err := Probe(targets(occupiedTarget, freeTarget))
 
 			// Then the free target is left out
 			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[string]TargetState{
-				occupiedTarget: TargetOccupied{},
+			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{
+				xdg.Target(occupiedTarget): plan.TargetOccupied{},
 			}))
 		})
 	})
@@ -139,12 +143,12 @@ var _ = Describe("Probe", func() {
 			Expect(os.Symlink(missingPath, danglingTarget)).To(Succeed())
 
 			// When probing the targets
-			states, err := Probe([]string{danglingTarget})
+			states, err := Probe(targets(danglingTarget))
 
 			// Then the entry has nowhere to relocate to
 			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[string]TargetState{
-				danglingTarget: TargetOccupied{},
+			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{
+				xdg.Target(danglingTarget): plan.TargetOccupied{},
 			}))
 		})
 	})
@@ -157,15 +161,15 @@ var _ = Describe("Probe", func() {
 			writeFile(filepath.Dir(blockedTarget))
 
 			// When probing the targets
-			states, err := Probe([]string{blockedTarget})
+			states, err := Probe(targets(blockedTarget))
 
 			// Then the blocker is the file
 			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[string]TargetState{
-				blockedTarget: TargetBlocked{
-					blocker: filepath.Join(basePath, "git"),
+			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{
+				xdg.Target(blockedTarget): plan.TargetBlocked{
+					Blocker: filepath.Join(basePath, "git"),
 				},
-			}, targetStateFields()))
+			}))
 		})
 	})
 
@@ -178,15 +182,15 @@ var _ = Describe("Probe", func() {
 			writeFile(blockingPath)
 
 			// When probing the targets
-			states, err := Probe([]string{blockedTarget})
+			states, err := Probe(targets(blockedTarget))
 
 			// Then the blocker is the file, not the missing directory under it
 			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[string]TargetState{
-				blockedTarget: TargetBlocked{
-					blocker: blockingPath,
+			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{
+				xdg.Target(blockedTarget): plan.TargetBlocked{
+					Blocker: blockingPath,
 				},
-			}, targetStateFields()))
+			}))
 		})
 	})
 
@@ -202,11 +206,11 @@ var _ = Describe("Probe", func() {
 			Expect(os.Symlink(realPath, linkPath)).To(Succeed())
 
 			// When probing the targets
-			states, err := Probe([]string{linkedTarget})
+			states, err := Probe(targets(linkedTarget))
 
 			// Then nothing stands in the way of relocating to the target
 			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[string]TargetState{}))
+			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{}))
 		})
 	})
 
@@ -220,15 +224,15 @@ var _ = Describe("Probe", func() {
 			Expect(os.Symlink(missingPath, linkPath)).To(Succeed())
 
 			// When probing the targets
-			states, err := Probe([]string{blockedTarget})
+			states, err := Probe(targets(blockedTarget))
 
 			// Then the blocker is the dangling symlink
 			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[string]TargetState{
-				blockedTarget: TargetBlocked{
-					blocker: linkPath,
+			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{
+				xdg.Target(blockedTarget): plan.TargetBlocked{
+					Blocker: linkPath,
 				},
-			}, targetStateFields()))
+			}))
 		})
 	})
 })
@@ -250,7 +254,7 @@ var _ = Describe("Symlink", func() {
 		writeFile(entryPath)
 
 		// When relocating the entry and linking back to it
-		err := Symlink(entryPath, targetPath)
+		err := Symlink(entryPath, xdg.Target(targetPath))
 
 		// Then the link left in home points to the target it was relocated to
 		Expect(err).NotTo(HaveOccurred())
@@ -277,7 +281,7 @@ var _ = Describe("Move", func() {
 
 	It("should leave the entry at its target, with nothing behind", func() {
 		// When relocating the entry to its target
-		err := Move(entryPath, targetPath)
+		err := Move(entryPath, xdg.Target(targetPath))
 
 		// Then the entry sits at its target, and its old path is gone
 		Expect(err).NotTo(HaveOccurred())
@@ -288,7 +292,7 @@ var _ = Describe("Move", func() {
 	Context("when the directories above the target do not exist yet", func() {
 		It("should create them as the specification asks", func() {
 			// When relocating the entry to its target
-			err := Move(entryPath, targetPath)
+			err := Move(entryPath, xdg.Target(targetPath))
 
 			// Then each directory created holds the mode the specification asks
 			Expect(err).NotTo(HaveOccurred())
@@ -300,9 +304,21 @@ var _ = Describe("Move", func() {
 	})
 })
 
-// targetStateFields lets cmp read the field a target state keeps unexported.
-func targetStateFields() cmp.Option {
-	return cmp.AllowUnexported(TargetBlocked{})
+// resolvedBaseDirs resolves the base directories the environment names.
+func resolvedBaseDirs(environment xdg.Environment) xdg.BaseDirs {
+	GinkgoHelper()
+
+	baseDirs, err := xdg.Resolve(environment)
+	Expect(err).NotTo(HaveOccurred())
+
+	return baseDirs
+}
+
+// targets converts the paths a spec builds into the targets Probe takes.
+func targets(paths ...string) []xdg.Target {
+	return lo.Map(paths, func(path string, _ int) xdg.Target {
+		return xdg.Target(path)
+	})
 }
 
 func writeFile(path string) {

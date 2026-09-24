@@ -4,7 +4,7 @@ linters:
   # Defaults (errcheck, govet, ineffassign, staticcheck, unused) plus the
   # linters that enforce a specific rule in CLAUDE.md.
   enable:
-    - depguard # §Architecture: infra must not import domain
+    - depguard # §Architecture: the pure core touches nothing
     - errname # §Guiding principles: sentinels are named Err…
     - errorlint # §Guiding principles: wrapping verb, compare with errors.Is
     - exhaustive # §Guiding principles: branch exhaustively on typed constants
@@ -27,12 +27,23 @@ linters:
   settings:
     depguard:
       rules:
-        imperative-shell:
+        # Enforce purity within the functional core.
+        pure-core:
           files:
-            - "**/internal/infra/**"
+            - "**/internal/domain/**"
           deny:
-            - pkg: github.com/dragonwasrobot/xdg-housekeeper/internal/domain
-              desc: the imperative shell must not import the pure core
+            - pkg: os
+              desc: reads no environment and touches no file
+            - pkg: io
+              desc: returns values, never writes a stream
+            - pkg: bufio
+              desc: returns values, never writes a stream
+            - pkg: net
+              desc: core reaches nothing over a network
+            - pkg: time
+              desc: core reads no clock
+            - pkg: github.com/dragonwasrobot/xdg-housekeeper/internal/infra
+              desc: adapters may import from core not the other way around
 
     errcheck:
       # Never `_ = err`; a discarded error is still an unhandled one.
