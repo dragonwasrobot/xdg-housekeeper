@@ -74,10 +74,14 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   and `.claude/`.
 - **unsupported app**: an *app* whose *entries* cannot be relocated at all, so
   no *rule* ever claims them. Declared in its own list beside the *rules*, one
-  element per *entry* the app owns, each element specifying an *obstacle*.
-- **obstacle**: what stands in the way of relocating an *entry*, specified in
-  the *action* so the *plan* says why it skipped it. An *unsupported app*
-  declares its own; a *blocked target* renders its *blocker* into one.
+  *unsupported entry* per *entry* the app owns.
+- **unsupported entry**: one *entry* an *unsupported app* owns, naming that
+  app, the entry, and the *obstacle* standing in the way. An app owning several
+  entries declares several, since the obstacle is a fact about the entry rather
+  than about the app.
+- **obstacle**: what stands in the way of relocating an *entry*, declared by an
+  *unsupported entry* and carried into the *action* so the *plan* says why it
+  skipped it.
 - **claim**: what a *rule* does to the one *entry* it names. Every rule claims
   exactly one entry, and every entry is claimed by at most one rule; an entry no
   rule claims is *unsupported* when an *unsupported app* owns it, and
@@ -103,15 +107,23 @@ documentation to define the domain language for the `xdg-housekeeper` tool:
   pointing at nothing also acts a blocks. Nothing exists at the target itself,
   so it is not an *occupied target*; the *blocker* is the file in the way.
 - **blocker**: the file a *probe* found standing in the way of a *target*'s
-  parent chain, captured by the *blocked target*.
+  parent chain, captured by the *blocked target* and carried into the *blocked*
+  *action*.
 - **relocation**: how a *rule* relocates its *entry*: either by moving it
   outright, or by moving it and leaving a *symlink* behind. The rule declares
-  it, the *plan* carries it out; a *move* rule yields a *move* *action*.
+  it, the *plan* carries it out; a *move* rule yields a *move* *action*. Names
+  both sides: the declaration a rule carries, and the *actions* that relocate
+  rather than *skip*.
 - **symlink**: the symbolic link between the original *entry* path and the new
   entry path relocated within the appropriate *location*. Used when an *app*
   does not fully adhere to the XDG specification, and the old entry path still
   needs to be present. Also names the *relocation* and the *action* that create
   one.
+- **note**: what the user still has to do for an *app* to use its *target*
+  directly, carried by a *symlink* *relocation* and reported beside the
+  *action* it qualifies. Usually the *XDG variable* the app reads instead. A
+  *symlink* keeps the app working without it, so a note is advice rather than
+  an *obstacle*; a symlink needing none carries no note.
 - **candidate**: a *rule* paired with a matching *entry* in *home*, along with
   the *target* that entry should relocate to. Only an entry present in home
   produces one.
