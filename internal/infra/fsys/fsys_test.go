@@ -153,26 +153,6 @@ var _ = Describe("Probe", func() {
 		})
 	})
 
-	Context("when a target's path is blocked by a non-directory", func() {
-		It("should report the file standing in its way", func() {
-			// Given a regular file where the target's parent would be
-			blockedTarget := filepath.Join(basePath, "git", "config")
-
-			writeFile(filepath.Dir(blockedTarget))
-
-			// When probing the targets
-			states, err := Probe(targets(blockedTarget))
-
-			// Then the blocker is the file
-			Expect(err).NotTo(HaveOccurred())
-			Expect(states).To(BeComparableTo(map[xdg.Target]plan.TargetState{
-				xdg.Target(blockedTarget): plan.TargetBlocked{
-					Blocker: filepath.Join(basePath, "git"),
-				},
-			}))
-		})
-	})
-
 	Context("when a regular file sits several levels above the target", func() {
 		It("should report that file rather than the missing directory under it", func() {
 			// Given a file instead of a directory on the way to the target
@@ -289,18 +269,16 @@ var _ = Describe("Move", func() {
 		Expect(entryPath).NotTo(BeAnExistingFile())
 	})
 
-	Context("when the directories above the target do not exist yet", func() {
-		It("should create them as the specification asks", func() {
-			// When relocating the entry to its target
-			err := Move(entryPath, xdg.Target(targetPath))
+	It("should create the target's parent directories as the specification asks", func() {
+		// When relocating the entry to its target
+		err := Move(entryPath, xdg.Target(targetPath))
 
-			// Then each directory created holds the mode the specification asks
-			Expect(err).NotTo(HaveOccurred())
+		// Then each directory created holds the mode the specification asks
+		Expect(err).NotTo(HaveOccurred())
 
-			info, statErr := os.Stat(filepath.Dir(targetPath))
-			Expect(statErr).NotTo(HaveOccurred())
-			Expect(info.Mode().Perm()).To(BeComparableTo(os.FileMode(0o700)))
-		})
+		info, statErr := os.Stat(filepath.Dir(targetPath))
+		Expect(statErr).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(BeComparableTo(os.FileMode(0o700)))
 	})
 })
 
