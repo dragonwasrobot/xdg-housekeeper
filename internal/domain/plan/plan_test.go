@@ -1,11 +1,11 @@
 package plan
 
 import (
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/rules"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 )
 
 // Every spec below resolves its targets against the same home directory, so the
@@ -150,6 +150,7 @@ var _ = Describe("Build", func() {
 					app:       "less",
 					entryPath: "/home/dwr/.lesshst",
 					target:    "/home/dwr/.local/state/less/history",
+					note:      "set LESSHISTFILE to make less use the new path directly",
 				},
 			}, actionFields()))
 		})
@@ -210,13 +211,12 @@ var _ = Describe("Build", func() {
 			// When building the plan
 			actions := Build(survey, states)
 
-			// Then the entry stays where it is, and the obstacle describes the reason
+			// Then the entry stays where it is, naming the file in its way
 			Expect(actions).To(BeComparableTo(Plan{
 				Blocked{
 					app:       "wget",
 					entryPath: "/home/dwr/.wgetrc",
-					obstacle: "/home/dwr/.config/wget already exists and is not a " +
-						"directory",
+					blocker:   "/home/dwr/.config/wget",
 				},
 			}, actionFields()))
 		})
@@ -311,8 +311,7 @@ var _ = Describe("Build", func() {
 				Blocked{
 					app:       "less",
 					entryPath: "/home/dwr/.lesshst",
-					obstacle: "/home/dwr/.local/state/less already exists and " +
-						"is not a directory",
+					blocker:   "/home/dwr/.local/state/less",
 				},
 				Occupied{
 					app:       "wget",
@@ -404,90 +403,6 @@ var _ = Describe("Build", func() {
 			}, actionFields()))
 		})
 	})
-
-	Context("when a rule declares a relocation the package does not define", func() {
-		It("should refuse to build a plan at all", func() {
-			// Given an entry claimed by a rule with an unknown relocation
-			entries := []Entry{{Path: "/home/dwr/.gitconfig"}}
-			bogus := gitRule()
-			bogus.Relocation = Relocation("bogus")
-
-			survey := Survey{
-				entries: entries,
-				candidates: []Candidate{
-					{
-						Rule:   bogus,
-						Entry:  entries[0],
-						Target: "/home/dwr/.config/git/config",
-					},
-				},
-			}
-
-			// When building the plan
-			build := func() {
-				Build(survey, map[xdg.Target]TargetState{})
-			}
-
-			// Then the entry is not left out of the plan silently
-			Expect(build).To(Panic())
-		})
-	})
-})
-
-var _ = Describe("Rules", func() {
-	It("should name only targets inside their base directories", func() {
-		// Given the compiled-in rules list
-		declared := rules()
-
-		// When resolving the target every rule in the list names
-		for _, rule := range declared {
-			_, err := baseDirs.Target(rule.RelPath, rule.Location)
-
-			// Then the rule names one inside its location's base directory
-			Expect(err).NotTo(HaveOccurred(), "rule for %q", rule.App)
-		}
-	})
-
-	It("should declare only relocations the package defines", func() {
-		// Given the compiled-in rules list
-		declared := rules()
-
-		// When checking the relocation each rule declares
-		for _, rule := range declared {
-			// Then it is one the package gives an action for
-			Expect(rule.Relocation).To(
-				BeElementOf(RelocationMove, RelocationSymlink),
-				"rule for %q", rule.App,
-			)
-		}
-	})
-
-	It("should claim each entry with at most one rule", func() {
-		// Given the compiled-in rules list
-		declared := rules()
-
-		// When indexing it by the entry each rule claims
-		indexed := lo.KeyBy(declared, func(rule Rule) string {
-			return rule.EntryName
-		})
-
-		// Then no entry was claimed by more than one rule
-		Expect(indexed).To(HaveLen(len(declared)))
-	})
-
-	It("should claim no entry an unsupported app owns", func() {
-		// Given the compiled-in rules list, indexed by the entry each claims
-		claimed := lo.KeyBy(rules(), func(rule Rule) string {
-			return rule.EntryName
-		})
-
-		// When checking every entry the unsupported list names
-		for _, app := range unsupportedApps() {
-			// Then no rule claims it, which would drop its obstacle
-			Expect(claimed).NotTo(HaveKey(app.EntryName),
-				"entry of %q", app.App)
-		}
-	})
 })
 
 // actionFields lets cmp read the fields an action keeps unexported.
@@ -498,34 +413,38 @@ func actionFields() cmp.Option {
 }
 
 // gitRule returns the rule claiming .gitconfig, which relocates by moving.
-func gitRule() Rule {
-	return Rule{
+func gitRule() rules.Rule {
+	return rules.Rule{
 		App:        "git",
 		EntryName:  ".gitconfig",
 		Location:   xdg.LocationConfig,
 		RelPath:    "git/config",
-		Relocation: RelocationMove,
+		Relocation: rules.RelocationMove{},
 	}
 }
 
 // lessRule returns the rule claiming .lesshst, which relocates by symlink.
-func lessRule() Rule {
-	return Rule{
-		App:        "less",
-		EntryName:  ".lesshst",
-		Location:   xdg.LocationState,
-		RelPath:    "less/history",
-		Relocation: RelocationSymlink,
+func lessRule() rules.Rule {
+	return rules.Rule{
+		App:       "less",
+		EntryName: ".lesshst",
+		Location:  xdg.LocationState,
+		RelPath:   "less/history",
+		Relocation: rules.RelocationSymlink{
+			Note: "set LESSHISTFILE to make less use the new path directly",
+		},
 	}
 }
 
 // wgetRule returns the rule claiming .wgetrc, which relocates by symlink.
-func wgetRule() Rule {
-	return Rule{
-		App:        "wget",
-		EntryName:  ".wgetrc",
-		Location:   xdg.LocationConfig,
-		RelPath:    "wget/wgetrc",
-		Relocation: RelocationSymlink,
+func wgetRule() rules.Rule {
+	return rules.Rule{
+		App:       "wget",
+		EntryName: ".wgetrc",
+		Location:  xdg.LocationConfig,
+		RelPath:   "wget/wgetrc",
+		Relocation: rules.RelocationSymlink{
+			Note: "set WGETRC to make wget use the new path directly",
+		},
 	}
 }

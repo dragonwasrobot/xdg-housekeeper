@@ -1,5 +1,5 @@
 // Package plan turns the entries found in home into a housekeeping plan: which
-// rule claims each entry, where it belongs, and what should happen to it.
+// entries can be relocated, how should they be relocated, which are skipped.
 package plan
 
 import (
@@ -10,10 +10,11 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/rules"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
 )
 
-// Entry is one dot-prefixed file or directory sitting directly in home. Path is
+// Entry is one dot-prefixed file or directory existing in home. Path is
 // absolute; obtained from traversing the home directory.
 type Entry struct {
 	Path string
@@ -24,31 +25,10 @@ func (e Entry) Name() string {
 	return filepath.Base(e.Path)
 }
 
-// Relocation names how a rule relocates the entry it claims.
-type Relocation string
-
-const (
-	// RelocationMove moves the entry to its target, leaving nothing behind.
-	RelocationMove Relocation = "move"
-	// RelocationSymlink moves the entry to its target and leaves a symlink at
-	// the old path, so an app that cannot be pointed at the new location keeps
-	// working.
-	RelocationSymlink Relocation = "symlink"
-)
-
-// Rule maps an entry in home to the location and target it belongs in.
-type Rule struct {
-	App        string
-	EntryName  string
-	Location   xdg.Location
-	RelPath    string
-	Relocation Relocation
-}
-
 // Candidate pairs a rule with the entry it claims and its intended target.
 // A candidate only exists for a rule whose entry is present in home.
 type Candidate struct {
-	Rule   Rule
+	Rule   rules.Rule
 	Entry  Entry
 	Target xdg.Target
 }
@@ -71,7 +51,7 @@ func (s Survey) Targets() []xdg.Target {
 // produced. An entry no rule claims yields no candidate but stays in the
 // survey, since the plan still has to account for it.
 func Claim(entries []Entry, baseDirs xdg.BaseDirs) (Survey, error) {
-	claimedBy := lo.KeyBy(rules(), func(rule Rule) string {
+	claimedBy := lo.KeyBy(rules.Rules(), func(rule rules.Rule) string {
 		return rule.EntryName
 	})
 	candidates := make([]Candidate, 0, len(entries))
@@ -99,19 +79,8 @@ func Claim(entries []Entry, baseDirs xdg.BaseDirs) (Survey, error) {
 	return Survey{entries: entries, candidates: candidates}, nil
 }
 
-// rules returns the hardcoded rules list, which declares one rule per entry it
-// claims.
-func rules() []Rule {
-	return []Rule{
-		{
-			App:        "git",
-			EntryName:  ".gitconfig",
-			Location:   xdg.LocationConfig,
-			RelPath:    "git/config",
-			Relocation: RelocationMove,
-		},
-	}
-}
+// Plan is the ordered set of actions covering every entry found in home.
+type Plan []Action
 
 // Action is what a plan emits for one entry: either relocating the entry to its
 // target, or skipping it and leaving it where it is.
@@ -120,11 +89,28 @@ func rules() []Rule {
 type Action interface {
 	isAction()
 
-	// App returns the optional app that owns the entry.
-	App() (string, bool)
-
 	// EntryPath returns the path in home of the entry this action covers.
 	EntryPath() string
+}
+
+// Managed is an action whose entry an app owns.
+//
+//sumtype:decl
+type Managed interface {
+	Action
+
+	// App returns the app that owns the entry.
+	App() string
+}
+
+// Relocation is an action that moves its entry to a target.
+//
+//sumtype:decl
+type Relocation interface {
+	Action
+
+	// Target returns the path the entry relocates to.
+	Target() xdg.Target
 }
 
 // Move relocates the entry to its target, leaving nothing behind.
@@ -137,13 +123,13 @@ type Move struct {
 // isAction implements Action.
 func (Move) isAction() {}
 
-// App implements Action.
-func (m Move) App() (string, bool) { return m.app, true }
+// App implements Managed.
+func (m Move) App() string { return m.app }
 
 // EntryPath implements Action.
 func (m Move) EntryPath() string { return m.entryPath }
 
-// Target returns the path the entry relocates to.
+// Target implements Relocation.
 func (m Move) Target() xdg.Target { return m.target }
 
 // Symlink relocates the entry to its target and leaves a symlink at the old
@@ -152,19 +138,23 @@ type Symlink struct {
 	app       string
 	entryPath string
 	target    xdg.Target
+	note      string
 }
 
 // isAction implements Action.
 func (Symlink) isAction() {}
 
-// App implements Action.
-func (s Symlink) App() (string, bool) { return s.app, true }
+// App implements Managed.
+func (s Symlink) App() string { return s.app }
 
 // EntryPath implements Action. It is also where the symlink is left behind.
 func (s Symlink) EntryPath() string { return s.entryPath }
 
-// Target returns the path the entry relocates to.
+// Target implements Relocation.
 func (s Symlink) Target() xdg.Target { return s.target }
+
+// Note returns what the user has to do to make the symlink redundant.
+func (s Symlink) Note() (string, bool) { return s.note, s.note != "" }
 
 // Occupied skips the entry, because something already exists at its target.
 type Occupied struct {
@@ -176,37 +166,36 @@ type Occupied struct {
 // isAction implements Action.
 func (Occupied) isAction() {}
 
-// App implements Action.
-func (o Occupied) App() (string, bool) { return o.app, true }
+// App implements Managed.
+func (o Occupied) App() string { return o.app }
 
 // EntryPath implements Action.
 func (o Occupied) EntryPath() string { return o.entryPath }
 
-// Target returns the occupied path, which is what the user has to act on.
-func (o Occupied) Target() xdg.Target { return o.target }
+// OccupiedTarget returns the target something already sits at.
+func (o Occupied) OccupiedTarget() xdg.Target { return o.target }
 
-// Blocked skips the entry, because a non-directory exists on the path where
-// the target's parent directories need to be. The obstacle specifies the file.
+// Blocked skips the entry, because a non-directory exists on the path where the
+// target's parent directories need to be.
 type Blocked struct {
 	app       string
 	entryPath string
-	obstacle  string
+	blocker   string
 }
 
 // isAction implements Action.
 func (Blocked) isAction() {}
 
-// App implements Action.
-func (b Blocked) App() (string, bool) { return b.app, true }
+// App implements Managed.
+func (b Blocked) App() string { return b.app }
 
 // EntryPath implements Action.
 func (b Blocked) EntryPath() string { return b.entryPath }
 
-// Obstacle returns what stands between the entry and its target.
-func (b Blocked) Obstacle() string { return b.obstacle }
+// Blocker returns the file standing between the entry and its target.
+func (b Blocked) Blocker() string { return b.blocker }
 
-// Unsupported skips the entry, because its app cannot be relocated at all. The
-// obstacle says what stands in the way, since no rule will ever claim it.
+// Unsupported captures an entry that cannot be relocated.
 type Unsupported struct {
 	app       string
 	entryPath string
@@ -216,9 +205,8 @@ type Unsupported struct {
 // isAction implements Action.
 func (Unsupported) isAction() {}
 
-// App implements Action. An unsupported app still owns its entries despite no
-// rule claiming them.
-func (u Unsupported) App() (string, bool) { return u.app, true }
+// App implements Managed. An unsupported app still claims its entries.
+func (u Unsupported) App() string { return u.app }
 
 // EntryPath implements Action.
 func (u Unsupported) EntryPath() string { return u.entryPath }
@@ -226,8 +214,7 @@ func (u Unsupported) EntryPath() string { return u.entryPath }
 // Obstacle returns what stands in the way of relocating the app at all.
 func (u Unsupported) Obstacle() string { return u.obstacle }
 
-// Unmanaged skips the entry, because no rule claims it. It names no app, since
-// nothing here knows which app the entry belongs to.
+// Unmanaged skips the entry, because no rule claims it.
 type Unmanaged struct {
 	entryPath string
 }
@@ -235,17 +222,8 @@ type Unmanaged struct {
 // isAction implements Action.
 func (Unmanaged) isAction() {}
 
-// App implements Action, reporting false: no rule claims the entry and no app
-// is known to own it.
-func (u Unmanaged) App() (string, bool) { return "", false }
-
 // EntryPath implements Action.
 func (u Unmanaged) EntryPath() string { return u.entryPath }
-
-// Plan is the ordered set of actions covering every entry found in home,
-// computed in full before any of them run. A plan is a value; nothing changes
-// on disk until it is applied.
-type Plan []Action
 
 // TargetState is what a probe found standing between an entry and its target.
 //
@@ -271,7 +249,7 @@ func (TargetBlocked) isTargetState() {}
 
 // Build derives the action every entry in the survey calls for, using the
 // probed states to tell the entries with a free target from the ones the plan
-// has to skip. It panics on a rule declaring an unknown relocation.
+// has to skip.
 func Build(survey Survey, states map[xdg.Target]TargetState) Plan {
 	actions := make([]Action, 0, len(survey.entries))
 
@@ -314,8 +292,7 @@ func checkRelocationSkip(
 		return Blocked{
 			app:       rule.App,
 			entryPath: entryPath,
-			obstacle: fmt.Sprintf("%s already exists and is not a directory",
-				state.Blocker),
+			blocker:   state.Blocker,
 		}, true
 	}
 
@@ -323,30 +300,29 @@ func checkRelocationSkip(
 }
 
 // relocationFor returns the action for the relocation the candidate's rule
-// declares. It panics on a rule declaring an unknown relocation.
+// declares. It panics on a rule declaring no relocation.
 func relocationFor(candidate Candidate) Action {
 	rule := candidate.Rule
 	entryPath := candidate.Entry.Path
 
-	switch rule.Relocation {
-	case RelocationMove:
+	switch relocation := rule.Relocation.(type) {
+	case rules.RelocationMove:
 		return Move{
 			app:       rule.App,
 			entryPath: entryPath,
 			target:    candidate.Target,
 		}
 
-	case RelocationSymlink:
+	case rules.RelocationSymlink:
 		return Symlink{
 			app:       rule.App,
 			entryPath: entryPath,
 			target:    candidate.Target,
+			note:      relocation.Note,
 		}
-
-	default:
-		panic(fmt.Sprintf("rule for %q declares unknown relocation %q",
-			rule.App, rule.Relocation))
 	}
+
+	panic(fmt.Sprintf("rule for %q declares no relocation", rule.App))
 }
 
 // skips derives the action for every unclaimed entry.
@@ -355,9 +331,9 @@ func skips(survey Survey) []Action {
 		return candidate.Entry.Path
 	})
 
-	unsupportedEntries := lo.KeyBy(unsupportedApps(),
-		func(app unsupportedApp) string {
-			return app.EntryName
+	unsupportedEntries := lo.KeyBy(rules.UnsupportedEntries(),
+		func(entry rules.UnsupportedEntry) string {
+			return entry.Name
 		})
 
 	skipFor := func(entry Entry, _ int) (Action, bool) {
@@ -371,7 +347,7 @@ func skips(survey Survey) []Action {
 // whether no rule claims it.
 func checkUnclaimedSkip(entry Entry,
 	claimedPaths map[string]Candidate,
-	unsupportedEntries map[string]unsupportedApp) (Action, bool) {
+	unsupportedEntries map[string]rules.UnsupportedEntry) (Action, bool) {
 	if _, isClaimed := claimedPaths[entry.Path]; isClaimed {
 		return nil, false
 	}
@@ -388,51 +364,44 @@ func checkUnclaimedSkip(entry Entry,
 	}, true
 }
 
-// unsupportedApp names one entry of an app that cannot be relocated at all,
-// and what stands in the way. These apps have no rule, since there is no
-// target to relocate them to.
-type unsupportedApp struct {
-	App       string
-	EntryName string
-	Obstacle  string
-}
-
-// unsupportedApps returns the hardcoded list of apps that cannot be relocated.
-func unsupportedApps() []unsupportedApp {
-	return []unsupportedApp{
-		{
-			App:       "bash",
-			EntryName: ".bashrc",
-			Obstacle:  "read from a fixed path before any variable applies",
-		},
-	}
-}
-
-// ordered deterministically sorts the plan, first by actions app name, then by
-// entry, with unmanaged apps placed at the end of the plan.
+// ordered deterministically sorts the plan, first by the app that owns an
+// action, then by entry, with the unmanaged entries placed at the end.
 func ordered(actions []Action) Plan {
-	hasApp := func(action Action, _ int) bool {
-		_, owned := action.App()
+	managed := ManagedActions(actions)
+	unmanaged := lo.Reject(actions, ownedByApp)
 
-		return owned
-	}
+	slices.SortStableFunc(managed, byAppThenEntry)
+	slices.SortStableFunc(unmanaged, byEntry)
 
-	owned := lo.Filter(actions, hasApp)
-	unowned := lo.Reject(actions, hasApp)
+	asAction := func(action Managed, _ int) Action { return action }
 
-	slices.SortStableFunc(owned, byAppThenEntry)
-	slices.SortStableFunc(unowned, byEntry)
+	return append(lo.Map(managed, asAction), unmanaged...)
+}
 
-	return append(owned, unowned...)
+// ManagedActions returns the actions an app owns, which is every action but
+// Unmanaged.
+func ManagedActions(actions []Action) []Managed {
+	return lo.FilterMap(actions, asManaged)
+}
+
+// ownedByApp reports whether an app owns the entry the action covers.
+func ownedByApp(action Action, index int) bool {
+	_, owned := asManaged(action, index)
+
+	return owned
+}
+
+// asManaged returns the action as a Managed, and whether an app owns it.
+func asManaged(action Action, _ int) (Managed, bool) {
+	managed, owned := action.(Managed)
+
+	return managed, owned
 }
 
 // byAppThenEntry orders two actions by the app that owns them, breaking a tie
 // on the entry so an app owning several entries sorts the same way every run.
-func byAppThenEntry(a Action, b Action) int {
-	appA, _ := a.App()
-	appB, _ := b.App()
-
-	if byApp := strings.Compare(appA, appB); byApp != 0 {
+func byAppThenEntry(a Managed, b Managed) int {
+	if byApp := strings.Compare(a.App(), b.App()); byApp != 0 {
 		return byApp
 	}
 

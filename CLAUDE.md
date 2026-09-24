@@ -243,18 +243,17 @@ Two encodings, chosen by whether the variants carry data. Variants with no
 payload get a const block:
 
 ```go
-// internal/domain/plan/plan.go
+// internal/domain/xdg/xdg.go — abridged
 
-// Relocation names how a rule relocates the entry it claims.
-type Relocation string
+// Location specifies which XDG base directory an entry belongs in.
+type Location string
 
 const (
-    // RelocationMove moves the entry to its target, leaving nothing behind.
-    RelocationMove Relocation = "move"
-    // RelocationSymlink moves the entry to its target and leaves a symlink at
-    // the old path, so an app that cannot be pointed at the new location keeps
-    // working.
-    RelocationSymlink Relocation = "symlink"
+    // LocationConfig specifies the base directory holding configuration.
+    LocationConfig Location = "config"
+    // LocationCache specifies the base directory holding non-essential,
+    // regenerable data.
+    LocationCache Location = "cache"
 )
 ```
 
@@ -275,11 +274,30 @@ domain language already does — `EntryPath` is `Entry.Path`, `Target` is
 type Action interface {
     isAction()
 
-    // App returns the optional app that owns the entry.
-    App() (string, bool)
-
     // EntryPath returns the path in home of the entry this action covers.
     EntryPath() string
+}
+
+// Managed is an action whose entry an app owns, which is every action but
+// Unmanaged.
+//
+//sumtype:decl
+type Managed interface {
+    Action
+
+    // App returns the app that owns the entry.
+    App() string
+}
+
+// Relocation is an action that moves its entry to a target, rather than
+// leaving it where it is.
+//
+//sumtype:decl
+type Relocation interface {
+    Action
+
+    // Target returns the path the entry relocates to.
+    Target() xdg.Target
 }
 
 // Move relocates the entry to its target, leaving nothing behind.
@@ -289,24 +307,21 @@ type Move struct {
     target    xdg.Target
 }
 
-// App implements Action.
-func (m Move) App() (string, bool) { return m.app, true }
+// App implements Managed.
+func (m Move) App() string { return m.app }
 
 // EntryPath implements Action.
 func (m Move) EntryPath() string { return m.entryPath }
 
-// Target returns the path the entry relocates to.
+// Target implements Relocation.
 func (m Move) Target() xdg.Target { return m.target }
 
-// Unmanaged skips the entry, because no rule claims it. It names no app,
-// since nothing here knows which app the entry belongs to.
+// Unmanaged skips the entry, because no rule claims it. It is neither Managed
+// nor a Relocation: nothing here knows which app the entry belongs to, and the
+// entry stays where it is.
 type Unmanaged struct {
     entryPath string
 }
-
-// App implements Action, reporting false: no rule claims the entry and no app
-// is known to own it.
-func (u Unmanaged) App() (string, bool) { return "", false }
 
 // EntryPath implements Action.
 func (u Unmanaged) EntryPath() string { return u.entryPath }
@@ -320,12 +335,23 @@ reason: the payloads differ, so one struct could only hold their union, and
 `Unmanaged` — which has neither app nor target — would leave both fields empty.
 That is the optional-field lie §Modelling data forbids.
 
-A value **every** variant carries goes on the interface, where a forgotten
-variant is a compile error rather than a lint finding; `App` returns
-`(string, bool)` because an unmanaged entry has none, and an empty string would
-be the same lie. A value only some variants carry stays a plain accessor on
-those. Document the contract on the interface method and write
-`// X implements Action.` on each variant.
+A value **every** variant carries goes on the base interface, where a forgotten
+variant is a compile error rather than a lint finding — here that is
+`EntryPath` alone. A value a **subset** carries goes on a capability interface
+embedding `Action`, and the consumer takes that instead:
+`actionLines(action Managed)` never has to ask whether an app exists, and
+`gochecksumtype` checks its switch against the facet's own variants. A value
+**one** variant carries stays a plain accessor on it, as `Blocked.Blocker` is.
+
+A facet declares no marker method of its own. `isAction` already seals
+everything embedding `Action`, so a second marker would buy declared intent,
+not safety. That leaves membership structural, so two facets must not collide
+on a signature: the target a relocation moves to is `Target`, and the one an
+`Occupied` skip reports is `OccupiedTarget`.
+
+Document the contract on the interface method, and write
+`// X implements Managed.` on each variant — naming the interface that declares
+the method, not always `Action`.
 
 Branch on either with `switch`, never an `if`/`else` chain. Adding a variant
 must break every switch that ignores it, and a `default` clause never excuses
