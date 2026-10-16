@@ -17,19 +17,25 @@ of each one. Only what binds *before* a skill loads is stated here.
 
 ## Architecture
 
-Single binary, `main.go` at the repo root. Everything else lives under
-`internal/`, split into a pure core and an imperative shell:
+Single binary, `package main` at the repo root. Everything else lives under
+`internal/`, split into a pure core and the adapters around it:
 
 ```
-main.go                 package main — flags, exit codes, terminal output
+main.go                 package main — flags, exit codes, wiring
 internal/
   domain/               the pure core: no I/O, no env, no clock
-    xdg/                package xdg  — XDG base-directory spec knowledge
-    plan/               package plan — building a housekeeping plan
-  infra/                the imperative shell: the only place the world is touched
-    fsys/               package fsys — traversing and moving files
-    cli/                package cli  — argv parsing
+    xdg/                package xdg    — XDG base-directory spec knowledge
+    plan/               package plan   — building a housekeeping plan
+  infra/                the adapters: argv, filesystem, terminal text
+    fsys/               package fsys   — traversing and moving files
+    cli/                package cli    — argv parsing
+    report/             package report — the plan and its outcomes, as text
 ```
+
+An adapter translates between one outside format and the core's types, and
+holds nothing else: `report` assembles text but writes no stream, and the
+function that writes one stays in `main.go`. That splits the two `plan.Action`
+switches: `actionLines` renders, `applyAction` relocates.
 
 Directories carry the **layer**; package names carry the **concern**. So call
 sites read `plan.Claim(entries, baseDirs)` and `fsys.Traverse(home, baseDirs)`,
@@ -343,11 +349,13 @@ embedding `Action`, and the consumer takes that instead:
 `gochecksumtype` checks its switch against the facet's own variants. A value
 **one** variant carries stays a plain accessor on it, as `Blocked.Blocker` is.
 
-A facet declares no marker method of its own. `isAction` already seals
-everything embedding `Action`, so a second marker would buy declared intent,
-not safety. That leaves membership structural, so two facets must not collide
-on a signature: the target a relocation moves to is `Target`, and the one an
-`Occupied` skip reports is `OccupiedTarget`.
+A facet declares no marker method of its own where the variants sit in one file
+and a spec pins the behavior. `isAction` already seals everything embedding
+`Action`, so a second marker adds no protection from outside — only from a
+variant joining the facet by accident, at a method per variant. That leaves
+membership structural, so two facets must not collide on a signature: the
+target a relocation moves to is `Target`, and the one an `Occupied` skip
+reports is `OccupiedTarget`.
 
 Document the contract on the interface method, and write
 `// X implements Managed.` on each variant — naming the interface that declares
@@ -363,17 +371,34 @@ nothing silently does nothing — so give it a `default` that panics, naming the
 value it rejected:
 
 ```go
-default:
-    panic(fmt.Sprintf("rule for %q declares unknown relocation %q",
-        rule.App, rule.Relocation))
+// internal/domain/xdg/xdg.go — the tail of BaseDir
+
+    default:
+        panic(fmt.Sprintf("undefined location %q", location))
+    }
+}
 ```
 
 The variants are compiled in, so a value outside them is programmer error, not
 input to report — never widen a signature to `(T, error)` for a failure no
 reachable input produces. A variant parsed from untrusted text is validated at
 the edge that reads it instead, per §Boundaries, so the switch downstream still
-panics. A sealed interface is closed by its unexported method, so omit
-`default` there; it could only ever catch a nil interface value.
+panics.
+
+A sealed interface needs no such `default`: its unexported method closes it, so
+the clause could only ever catch a nil interface value. A type switch inside a
+function that returns a value still needs an ending the compiler can see, so
+the panic goes after the switch rather than inside it, naming the type it could
+not place:
+
+```go
+// internal/infra/report/report.go — the tail of actionLines
+
+    }
+
+    panic(fmt.Sprintf("undefined action %T", action))
+}
+```
 
 ## Error handling
 
@@ -400,8 +425,10 @@ panics. A sealed interface is closed by its unexported method, so omit
   that it says anything.
 - Callers branch with `errors.Is` for identity and `errors.As` when they need
   data out of the failure; a failure carrying data wants its own error type.
-  Never compare `err.Error()` strings — `errorlint` catches `==` against a
-  sentinel, the string comparison it won't.
+  Reach for `errors.AsType[E]` only where that data is used: discarding its
+  first result trips `errcheck`'s `check-blank`, and a branch wanting the test
+  alone stays on `errors.As`. Never compare `err.Error()` strings — `errorlint`
+  catches `==` against a sentinel, the string comparison it won't.
 - Never discard an error; `errcheck` and `ineffassign` enforce it.
 - `panic` is for violated invariants and programmer error, never for bad input.
 - `main` is the dispatcher: it unwraps the chain, writes a message to stderr,

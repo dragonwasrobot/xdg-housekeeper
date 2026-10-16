@@ -139,7 +139,7 @@ func isAbsent(err error) bool {
 	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }
 
-// Symlink relocates the entry to its target and leaves a symlink at the old
+// Symlink relocates the entry to its target and leaves a link at the old
 // path, so an app that cannot be pointed at the new location keeps working.
 func Symlink(entryPath string, target xdg.Target) error {
 	if err := Move(entryPath, target); err != nil {
