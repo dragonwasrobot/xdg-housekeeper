@@ -6,7 +6,7 @@ import (
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
 )
 
-// Rule captures how to relocate a specific entry claimed by an app.
+// Rule captures where one app's entry belongs and how it gets there.
 type Rule struct {
 	App        string
 	EntryName  string
@@ -28,9 +28,10 @@ type RelocationMove struct{}
 // isRelocation implements Relocation.
 func (RelocationMove) isRelocation() {}
 
-// RelocationSymlink moves the entry to its target and leaves behind a symlink.
+// RelocationSymlink moves the entry to its target and leaves a link at the old
+// path.
 type RelocationSymlink struct {
-	// Note details what the user needs to do to make the symlink redundant.
+	// Note details what the user needs to do to make the link redundant.
 	Note string
 }
 
@@ -69,7 +70,8 @@ func Rules() []Rule {
 	}
 }
 
-// UnsupportedEntry captures an entry claimed by an app that can't be relocated.
+// UnsupportedEntry captures an entry an unsupported app owns, and the
+// obstacle that keeps it in place.
 type UnsupportedEntry struct {
 	App      string
 	Name     string

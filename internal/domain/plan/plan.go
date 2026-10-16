@@ -132,7 +132,7 @@ func (m Move) EntryPath() string { return m.entryPath }
 // Target implements Relocation.
 func (m Move) Target() xdg.Target { return m.target }
 
-// Symlink relocates the entry to its target and leaves a symlink at the old
+// Symlink relocates the entry to its target and leaves a link at the old
 // path, so an app that cannot be pointed at the new location keeps working.
 type Symlink struct {
 	app       string
@@ -147,13 +147,13 @@ func (Symlink) isAction() {}
 // App implements Managed.
 func (s Symlink) App() string { return s.app }
 
-// EntryPath implements Action. It is also where the symlink is left behind.
+// EntryPath implements Action. It is also where the link is left behind.
 func (s Symlink) EntryPath() string { return s.entryPath }
 
 // Target implements Relocation.
 func (s Symlink) Target() xdg.Target { return s.target }
 
-// Note returns what the user has to do to make the symlink redundant.
+// Note returns what the user has to do to make the link redundant.
 func (s Symlink) Note() (string, bool) { return s.note, s.note != "" }
 
 // Occupied skips the entry, because something already exists at its target.
@@ -205,7 +205,7 @@ type Unsupported struct {
 // isAction implements Action.
 func (Unsupported) isAction() {}
 
-// App implements Managed. An unsupported app still claims its entries.
+// App implements Managed. An unsupported app still owns its entries.
 func (u Unsupported) App() string { return u.app }
 
 // EntryPath implements Action.
