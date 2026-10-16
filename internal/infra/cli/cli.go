@@ -10,31 +10,54 @@ import (
 	"slices"
 )
 
-// Command is what a run was asked to do.
-type Command string
+// Options capture all arguments given to a run.
+//
+//sumtype:decl
+type Options interface {
+	isOptions()
+}
+
+// Help tells a run to report how the tool is used.
+type Help struct{}
+
+func (Help) isOptions() {}
+
+// Housekeeping tells the run to clean up home; spanning both plan and apply.
+type Housekeeping struct {
+	home         string
+	confirmation Confirmation
+}
+
+func (Housekeeping) isOptions() {}
+
+// Home returns the optional home directory provided to the run.
+func (h Housekeeping) Home() string { return h.home }
+
+// Confirmation returns the run's choice of confirmation.
+func (h Housekeeping) Confirmation() Confirmation { return h.confirmation }
+
+// Confirmation specifies where a run's confirmation comes from.
+type Confirmation string
 
 const (
-	// CommandHelp asks a run to report how the tool is used.
-	CommandHelp Command = "help"
+	// ConfirmationWithheld is used by plan when the user should not be prompted.
+	ConfirmationWithheld Confirmation = "withheld"
 
-	// CommandPlan asks a run to report its plan, changing nothing on disk.
-	CommandPlan Command = "plan"
+	// ConfirmationAsked is used by apply when the user should be prompted.
+	ConfirmationAsked Confirmation = "asked"
 
-	// CommandApply asks a run to carry its plan out.
-	CommandApply Command = "apply"
+	// ConfirmationGiven is used by --yes flag when the user trusts the process.
+	ConfirmationGiven Confirmation = "given"
 )
 
-// Options is everything a run was asked for, as read from its arguments.
-type Options struct {
-	// Command is what this run carries out, defaulting to CommandHelp.
-	Command Command
+// command is the first non-flag argument given to a run.
+type command string
 
-	// Home overrides home directory. Empty means environment decides.
-	Home string
-
-	// Yes skips the confirmation an apply otherwise prompts for.
-	Yes bool
-}
+const (
+	commandHelp  command = "help"
+	commandPlan  command = "plan"
+	commandApply command = "apply"
+)
 
 // Usage reports how the tool is used.
 func Usage() string {
@@ -69,27 +92,29 @@ func Parse(args []string) (Options, error) {
 	if err != nil {
 		// Asking for usage is not a failure, however the flag set reports it.
 		if errors.Is(err, flag.ErrHelp) {
-			return Options{Command: CommandHelp}, nil
+			return Help{}, nil
 		}
 
 		//nolint:errorlint // flag's error is a stdlib detail
-		return Options{}, fmt.Errorf("parse arguments: %v", err)
+		return nil, fmt.Errorf("parse arguments: %v", err)
 	}
 
 	command, err := commandFrom(commandName)
 	if err != nil {
-		return Options{}, err
+		return nil, err
 	}
 
 	if flags.NArg() > 0 {
-		return Options{}, fmt.Errorf("unexpected argument %q", flags.Arg(0))
+		return nil, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
 
-	return Options{
-		Command: command,
-		Home:    values.home,
-		Yes:     values.yes,
-	}, nil
+	yesMisplaced := values.yes && command != commandApply
+	if yesMisplaced {
+		return nil, fmt.Errorf("--yes is only for the %s command",
+			commandApply)
+	}
+
+	return optionsFor(command, *values), nil
 }
 
 // flagValues holds what each flag was set to. Every field is filled by the
@@ -138,12 +163,12 @@ func parseArgs(args []string, flags *flag.FlagSet) (string, error) {
 
 // commandFrom finds the command matching the argv, treating the absence of one
 // as a request for usage.
-func commandFrom(name string) (Command, error) {
+func commandFrom(name string) (command, error) {
 	if name == "" {
-		return CommandHelp, nil
+		return commandHelp, nil
 	}
 
-	command := Command(name)
+	command := command(name)
 
 	if !slices.Contains(commands(), command) {
 		return "", fmt.Errorf("unknown command %q", name)
@@ -153,6 +178,28 @@ func commandFrom(name string) (Command, error) {
 }
 
 // commands returns every command a run may name, in the order Usage lists them.
-func commands() []Command {
-	return []Command{CommandHelp, CommandPlan, CommandApply}
+func commands() []command {
+	return []command{commandHelp, commandPlan, commandApply}
+}
+
+// optionsFor returns the options matching the specified command.
+func optionsFor(command command, values flagValues) Options {
+	switch command {
+	case commandHelp:
+		return Help{}
+
+	case commandPlan:
+		return Housekeeping{home: values.home, confirmation: ConfirmationWithheld}
+
+	case commandApply:
+		confirmation := ConfirmationAsked
+		if values.yes {
+			confirmation = ConfirmationGiven
+		}
+
+		return Housekeeping{home: values.home, confirmation: confirmation}
+
+	default:
+		panic(fmt.Sprintf("undefined command %q", command))
+	}
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	"github.com/onsi/ginkgo/v2/dsl/table"
 	. "github.com/onsi/gomega"
@@ -44,9 +45,7 @@ var _ = Describe("Parse", func() {
 
 			// Then the run says how it is used
 			Expect(err).NotTo(HaveOccurred())
-			Expect(options).To(BeComparableTo(Options{
-				Command: CommandHelp,
-			}))
+			Expect(options).To(BeComparableTo(Help{}))
 		},
 		table.Entry("because a run named no command at all",
 			[]string(nil)),
@@ -64,14 +63,27 @@ var _ = Describe("Parse", func() {
 
 				// Then the run handles both flags and command
 				Expect(err).NotTo(HaveOccurred())
-				Expect(options).To(BeComparableTo(want))
+				Expect(options).To(BeComparableTo(want,
+					cmp.AllowUnexported(Housekeeping{})))
 			},
 			table.Entry("because a run named the plan command",
 				[]string{"--home", "/home/dwr", "plan"},
-				Options{Command: CommandPlan, Home: "/home/dwr"}),
+				Housekeeping{
+					home:         "/home/dwr",
+					confirmation: ConfirmationWithheld,
+				}),
+			table.Entry("because a run named the apply command",
+				[]string{"--home", "/home/dwr", "apply"},
+				Housekeeping{
+					home:         "/home/dwr",
+					confirmation: ConfirmationAsked,
+				}),
 			table.Entry("because a run named the apply command and its flags",
 				[]string{"--home", "/home/dwr", "--yes", "apply"},
-				Options{Command: CommandApply, Home: "/home/dwr", Yes: true}),
+				Housekeeping{
+					home:         "/home/dwr",
+					confirmation: ConfirmationGiven,
+				}),
 		)
 	})
 
@@ -85,10 +97,9 @@ var _ = Describe("Parse", func() {
 
 			// Then the run handles them similar to prefixed flags
 			Expect(err).NotTo(HaveOccurred())
-			Expect(options).To(BeComparableTo(Options{
-				Command: CommandApply,
-				Yes:     true,
-			}))
+			Expect(options).To(BeComparableTo(Housekeeping{
+				confirmation: ConfirmationGiven,
+			}, cmp.AllowUnexported(Housekeeping{})))
 		})
 	})
 
@@ -99,7 +110,7 @@ var _ = Describe("Parse", func() {
 
 			// Then the run never starts
 			Expect(err).To(HaveOccurred())
-			Expect(options).To(BeComparableTo(Options{}))
+			Expect(options).To(BeNil())
 		},
 		table.Entry("because no part of the tool declares that command",
 			[]string{"bogus"}),
@@ -107,5 +118,7 @@ var _ = Describe("Parse", func() {
 			[]string{"--bogus"}),
 		table.Entry("because nothing takes the argument after the command",
 			[]string{"apply", "extra"}),
+		table.Entry("because only the apply command asks for a confirmation",
+			[]string{"plan", "--yes"}),
 	)
 })

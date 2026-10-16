@@ -143,3 +143,37 @@ What the tool will do with each entry.
   - *unsupported*: an unsupported app owns the entry, and its *obstacle* says
     why it stays.
   - *unmanaged*: no *rule* claims the entry, and no *unsupported app* owns it.
+
+### Applying and reporting
+
+What the tool reports to the user, and what the plan carries out.
+
+- **report**: the text a *run* prints about its *plan*: the *listing*, then the
+  *closing count*. An `apply` run prints the listing before carrying out any
+  *action*, then a *section* for each *app* whose action failed, then the
+  closing count.
+- **listing**: the start of every *report*: an opening line naming *home*, then
+  the *sections*.
+- **section**: one titled block of a *report*, with a heading line saying what
+  it covers and indented lines below. A blank line separates sections. In a
+  *listing*, the *base directories* come first, then one section per *app*
+  holding its *actions* in *plan* order, then a final section for the *entries*
+  no app owns.
+- **closing count**: the totals at the end of a *report*. For the `plan`
+  *command*, it counts *actions*, says that nothing has changed, and names the
+  command that carries the plan out if there is anything to relocate. For
+  `apply`, it counts *outcomes* alongside the skipped actions, unless the
+  *confirmation* was declined. Whichever the count, it lists the *occupied* and
+  *blocked* skips separately, since the user has to clear those by hand.
+- **outcome**: what happened when the *plan* carried out one *move* or
+  *symlink*, the only *actions* that are carried out. Either the *entry* was
+  relocated, or the action failed and the entry stayed where it was. A failure
+  doesn't stop the *run*, and the *report* shows it in a *section* for its
+  *app* after the *listing*.
+- **confirmation**: the go-ahead an `apply` *run* asks the user for, after
+  showing its *listing* and before carrying out any *action*. Where it comes
+  from is what tells the *commands* apart:
+  - *withheld*: never asked for and never given, so nothing changes. The
+    `plan` command.
+  - *asked*: asked of the user once the listing is shown. The `apply` command.
+  - *given*: given up front by the `--yes` flag, so the run never asks.
