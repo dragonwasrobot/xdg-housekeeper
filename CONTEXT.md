@@ -167,9 +167,10 @@ What the tool reports to the user, and what the plan carries out.
   *blocked* skips separately, since the user has to clear those by hand.
 - **outcome**: what happened when the *plan* carried out one *move* or
   *symlink*, the only *actions* that are carried out. Either the *entry* was
-  relocated, or the action failed and the entry stayed where it was. A failure
-  doesn't stop the *run*, and the *report* shows it in a *section* for its
-  *app* after the *listing*.
+  relocated, or the action failed. A failed *move* leaves the entry where it
+  was; a *symlink* can fail after relocating it but before linking back, and
+  the failure says where the entry went. A failure doesn't stop the *run*, and
+  the *report* shows it in a *section* for its *app* after the *listing*.
 - **confirmation**: the go-ahead an `apply` *run* asks the user for, after
   showing its *listing* and before carrying out any *action*. Where it comes
   from is what tells the *commands* apart:
