@@ -25,6 +25,7 @@ main.go                 package main — flags, exit codes, wiring
 internal/
   domain/               the pure core: no I/O, no env, no clock
     xdg/                package xdg    — XDG base-directory spec knowledge
+    rules/              package rules  — the rule table, and unsupported apps
     plan/               package plan   — building a housekeeping plan
   infra/                the adapters: argv, filesystem, terminal text
     fsys/               package fsys   — traversing and moving files
@@ -416,13 +417,14 @@ not place:
   already said.
 - Which verb is an API decision, not a formatting one. `%w` publishes the
   wrapped error's identity as part of what this package promises, so reach for
-  it when callers should branch on that identity — `xdg.ErrInvalidTarget` has
-  to survive two layers of wrapping to reach `main`. Use `%v` when identity is
-  not the point: a raw `*os.PathError` or errno crossing out of
-  `internal/infra` is an implementation detail, and `%w` there commits to it
-  forever. A deliberate `%v` in a wrap carries `//nolint:errorlint // …` naming
-  the detail being kept in; `nolintlint` enforces that the reason is there, not
-  that it says anything.
+  it when callers should branch on that identity — `plan.Claim` wraps
+  `xdg.ErrInvalidTarget` with it, so a caller can still tell a target outside
+  its base directory from any other failure. Use `%v` when identity is not the
+  point: a raw `*os.PathError` or errno crossing out of `internal/infra` is an
+  implementation detail, and `%w` there commits to it forever. A deliberate
+  `%v` in a wrap carries `//nolint:errorlint // …` naming the detail being kept
+  in; `nolintlint` enforces that the reason is there, not that it says
+  anything.
 - Callers branch with `errors.Is` for identity and `errors.As` when they need
   data out of the failure; a failure carrying data wants its own error type.
   Reach for `errors.AsType[E]` only where that data is used: discarding its
@@ -431,19 +433,15 @@ not place:
   catches `==` against a sentinel, the string comparison it won't.
 - Never discard an error; `errcheck` and `ineffassign` enforce it.
 - `panic` is for violated invariants and programmer error, never for bad input.
-- `main` is the dispatcher: it unwraps the chain, writes a message to stderr,
-  and exits non-zero. It is the only place that chooses an exit code.
+- `main` is the dispatcher: it writes the whole chain to stderr as one line and
+  exits non-zero. It is the only place that chooses an exit code.
 
 ```go
 // internal/domain/xdg/xdg.go — doc comments elided
 var ErrInvalidTarget = errors.New("target is not inside an XDG base directory")
 
 func (b BaseDirs) Target(relPath string, location Location) (Target, error) {
-    basePath, err := b.baseDir(location)
-    if err != nil {
-        return "", err
-    }
-
+    basePath := b.BaseDir(location)
     targetPath := filepath.Join(basePath, relPath)
     insideBase := !filepath.IsAbs(relPath) && within(targetPath, basePath)
 
@@ -457,13 +455,16 @@ func (b BaseDirs) Target(relPath string, location Location) (Target, error) {
 // internal/domain/plan/plan.go — each layer wraps with the context it has
 targetPath, err := baseDirs.Target(rule.RelPath, rule.Location)
 if err != nil {
-    return nil, fmt.Errorf("resolve target for %q: %w", rule.App, err)
+    return Survey{}, fmt.Errorf("resolve target for %q: %w", rule.App, err)
 }
 
-// main — identity survives both wrappings, and only main picks the exit code
-if errors.Is(err, xdg.ErrInvalidTarget) {
-    fmt.Fprintf(os.Stderr, "xdg-housekeeper: bad rule table: %v\n", err)
-    return exitFailure
+// main.go — the chain arrives whole, and only run picks the exit code
+if err != nil {
+    return reportFailure(stderr, errorLine(err), exitCodeFor(applied))
+}
+
+func errorLine(err error) string {
+    return fmt.Sprintf("xdg-housekeeper: %v\n", err)
 }
 ```
 
@@ -495,7 +496,8 @@ if errors.Is(err, xdg.ErrInvalidTarget) {
 
 - **Four levels.** `debug` for argument and computed-value dumps; `info` for
   milestones; `warn` for an anomaly the run survives, such as an unreadable
-  entry that gets skipped; `error` exactly once, at the dispatcher.
+  entry that gets skipped; `error` exactly once, at the dispatcher — its
+  stderr line stands in for it until a verbosity flag configures a handler.
   `internal/domain` and `internal/infra` return errors — they do not log them.
   A failure logged where it happens *and* returned gets reported twice, and the
   duplicate is the one without the surrounding context.
