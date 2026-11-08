@@ -62,20 +62,20 @@ const (
 // Usage reports how the tool is used.
 func Usage() string {
 	// Written out rather than assembled from the set of flag and commands.
-	const usage = `xdg-housekeeper relocates the entries in your home directory
-into the XDG base directories they belong in.
+	const usage = `xdg-housekeeper tidies the dotfiles in your home directory
+into the XDG directories they belong in.
 
 Usage:
   xdg-housekeeper [flags] <command>
 
 Commands:
-  help   report how the tool is used
-  plan   report what would change, leaving every entry where it is
-  apply  report what would change, and carry it out
+  help   show this help
+  plan   show what would change, without changing anything
+  apply  show what would change, then ask before changing it
 
 Flags:
-  --home DIR  use this directory as home, not the one the environment names
-  --yes       skip the confirmation prompt for the apply command
+  --home DIR  treat DIR as your home directory instead of $HOME
+  --yes       change things without asking first
 
 Flags may be passed on either side of the command.
 `
@@ -134,9 +134,9 @@ func newFlagSet() (*flag.FlagSet, *flagValues) {
 	var values flagValues
 
 	flags.StringVar(&values.home, "home", "",
-		"use this directory as home, not the one the environment names")
+		"treat DIR as your home directory instead of $HOME")
 	flags.BoolVar(&values.yes, "yes", false,
-		"skip the confirmation prompt for the apply command")
+		"change things without asking first")
 
 	return flags, &values
 }

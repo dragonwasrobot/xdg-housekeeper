@@ -38,6 +38,7 @@ variadic
 
 # Tools, projects, and platforms.
 antidot
+aws
 gnupg
 Gomega
 Tengo
@@ -52,6 +53,8 @@ xdg
 
 # Ordinary prose the dictionary lacks.
 backticked
+dotfile
+dotfiles
 frontmatter
 regenerable
 unpunctuated
