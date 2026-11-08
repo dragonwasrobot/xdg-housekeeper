@@ -67,6 +67,25 @@ func Rules() []Rule {
 				Note: "set WGETRC to make wget use the new path directly",
 			},
 		},
+		{
+			App:       "gnupg",
+			EntryName: ".gnupg",
+			Location:  xdg.LocationData,
+			RelPath:   "gnupg",
+			Relocation: RelocationSymlink{
+				Note: "set GNUPGHOME to make gpg use the new path directly",
+			},
+		},
+		{
+			App:       "aws",
+			EntryName: ".aws",
+			Location:  xdg.LocationConfig,
+			RelPath:   "aws",
+			Relocation: RelocationSymlink{
+				Note: "set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE " +
+					"to make aws use the new paths directly",
+			},
+		},
 	}
 }
 

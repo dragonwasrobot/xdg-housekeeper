@@ -215,6 +215,23 @@ var _ = Describe("Probe", func() {
 			}))
 		})
 	})
+
+	Context("when a target's parent directory cannot be read", func() {
+		It("should report the failure rather than a free target", func() {
+			// Given a directory above the target that nothing can be looked up in
+			unreadableTarget := filepath.Join(basePath, "git", "config")
+
+			Expect(os.Mkdir(filepath.Dir(unreadableTarget), 0o000)).
+				To(Succeed())
+
+			// When probing the targets
+			states, err := Probe(targets(unreadableTarget))
+
+			// Then an appropriate error is reported
+			Expect(err).To(HaveOccurred())
+			Expect(states).To(BeNil())
+		})
+	})
 })
 
 var _ = Describe("Symlink", func() {
