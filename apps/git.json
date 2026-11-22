@@ -1,0 +1,11 @@
+{
+  "app": "git",
+  "rules": [
+    {
+      "entryName": ".gitconfig",
+      "location": "config",
+      "relPath": "git/config",
+      "relocation": {"kind": "move"}
+    }
+  ]
+}

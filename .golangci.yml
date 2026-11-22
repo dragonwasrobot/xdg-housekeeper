@@ -139,12 +139,6 @@ linters:
         linters:
           - lll
 
-      # rules.go contains the list of rules, and will blow past funlen limit.
-      - path: internal/domain/rules/rules\.go
-        source: ^func (Rules|UnsupportedEntries)\(\)
-        linters:
-          - funlen
-
 issues:
   # Every finding on a line, not just the first; the default hides the second
   # until the first is fixed.

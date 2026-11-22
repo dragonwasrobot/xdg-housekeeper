@@ -1,0 +1,14 @@
+{
+  "app": "gnupg",
+  "rules": [
+    {
+      "entryName": ".gnupg",
+      "location": "data",
+      "relPath": "gnupg",
+      "relocation": {
+        "kind": "symlink",
+        "note": "set GNUPGHOME to make gpg use the new path directly"
+      }
+    }
+  ]
+}

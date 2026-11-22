@@ -1,0 +1,13 @@
+{
+  "app": "bash",
+  "unsupported": [
+    {
+      "entryName": ".bashrc",
+      "obstacle": "read from a fixed path before any variable applies"
+    },
+    {
+      "entryName": ".bash_profile",
+      "obstacle": "read from a fixed path before any variable applies"
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+#
+# Mutates one file in the repository, runs the specs that should catch the
+# mutation, and restores the file whatever happens: the testing skill's "break
+# the code on purpose and watch it go red", constrained enough to allowlist.
+#
+# The mutation replaces the one literal occurrence of FROM with TO. Zero or
+# several occurrences refuse to run, so a typo cannot pass as a caught
+# mutation. FILE must be tracked by git and lie outside .git/, .claude/ and
+# scripts/. The only command run is `go test -v PACKAGE -ginkgo.focus=FOCUS`.
+#
+# - Exit 0: a spec failed, so the mutation was caught.
+# - Exit 1: every spec passed, so it survived.
+# - Exit 2: nothing was tested — bad arguments, a package that no longer builds,
+#   or a focus matching no spec.
+#
+# Example:
+#
+# scripts/mutation-test apps/gnupg.json \
+#   '"relPath": "gnupg"' '"relPath": "../gnupg"' . shippedApps
+
+set -uo pipefail
+
+# The mutated file and its backup, relative to the repository root; `restore`
+# reads both when the script exits.
+relative=''
+backup=''
+
+main() {
+  [ "$#" -eq 5 ] || fail 'usage: mutation-test FILE FROM TO PACKAGE FOCUS'
+
+  local file=$1 from=$2 to=$3 package=$4 focus=$5 root
+
+  # `fail` inside `$(…)` exits only the subshell, hence each `|| exit 2`.
+  root=$(repo_root) || exit 2
+  relative=$(target_in "$root" "$file") || exit 2
+  package=$(package_in "$root" "$package") || exit 2
+  cd "$root" || fail "cd $root"
+
+  require_tracked "$relative"
+  require_one "$from" "$relative"
+  back_up "$relative"
+  mutate "$from" "$to" "$relative"
+  judge "$package" "$focus"
+}
+
+# repo_root prints the absolute path of the repository holding the current
+# directory.
+repo_root() {
+  local root
+
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || fail 'not in a repository'
+  realpath "$root"
+}
+
+# target_in prints the path of file relative to root, refusing one outside it
+# or inside a directory the script must not mutate.
+target_in() {
+  local root=$1 file=$2 target
+
+  target=$(realpath "$file" 2>/dev/null) || fail "no such file: $file"
+
+  case $target in
+    "$root"/.git/* | "$root"/.claude/* | "$root"/scripts/*)
+      fail "refusing to mutate $file"
+      ;;
+    "$root"/*) printf '%s\n' "${target#"$root"/}" ;;
+    *) fail "outside the repository: $file" ;;
+  esac
+}
+
+# package_in prints package as a `./` path from root. A package starting with
+# `-` would reach go test as a flag, `-exec` among them, so it must name a
+# directory inside the repository, from `.`.
+package_in() {
+  local root=$1 package=$2 dir
+
+  case $package in
+    . | ./*) ;;
+    *) fail "package must be . or start with ./: $package" ;;
+  esac
+
+  dir=$(realpath "$package" 2>/dev/null)
+
+  case $dir in
+    "$root") printf '.\n' ;;
+    "$root"/*) [ -d "$dir" ] && printf './%s\n' "${dir#"$root"/}" ;;
+    *) false ;;
+  esac || fail "not a directory inside the repository: $package"
+}
+
+require_tracked() {
+  git ls-files --error-unmatch -- "$1" >/dev/null 2>&1 ||
+    fail "not tracked by git: $1"
+}
+
+# require_one refuses to go on unless from occurs exactly once in file.
+require_one() {
+  local from=$1 file=$2 count
+
+  count=$(FROM=$from perl -0777 -ne 'print scalar(() = /\Q$ENV{FROM}\E/g)' \
+    -- "$file")
+
+  [ "$count" = 1 ] || fail "FROM occurs ${count:-0} times in $file, not once"
+}
+
+# back_up copies file aside and arranges for `restore` to put it back however
+# the script exits.
+back_up() {
+  backup=$(mktemp) || fail 'mktemp'
+  cp -p "$1" "$backup" || fail "back up $1"
+
+  trap restore EXIT
+  trap 'exit 130' INT TERM
+}
+
+restore() {
+  if cp -p "$backup" "$relative" && cmp -s "$backup" "$relative"; then
+    rm -f "$backup"
+  else
+    printf 'mutation-test: restore failed, original kept at %s\n' "$backup" >&2
+    exit 2
+  fi
+}
+
+mutate() {
+  FROM=$1 TO=$2 perl -0777 -pi -e 's/\Q$ENV{FROM}\E/$ENV{TO}/' -- "$3" ||
+    fail "mutate $3"
+}
+
+# judge runs the focused specs against the mutation and exits with the
+# verdict.
+judge() {
+  local package=$1 focus=$2 out status
+
+  out=$(go test -v "$package" -ginkgo.no-color -ginkgo.focus="$focus" 2>&1)
+  status=$?
+
+  printf '%s\n' "$out"
+
+  [[ $out == *"[build failed]"* ]] && fail 'the mutated package does not build'
+  [[ $out == *"Ran 0 of "* ]] && fail "focus matched no spec: $focus"
+
+  if [ "$status" -eq 0 ]; then
+    printf 'mutation-test: survived, every spec passed\n' >&2
+    exit 1
+  fi
+
+  printf 'mutation-test: caught\n' >&2
+}
+
+fail() {
+  printf 'mutation-test: %s\n' "$1" >&2
+  exit 2
+}
+
+main "$@"

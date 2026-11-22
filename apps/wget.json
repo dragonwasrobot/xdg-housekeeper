@@ -1,0 +1,14 @@
+{
+  "app": "wget",
+  "rules": [
+    {
+      "entryName": ".wgetrc",
+      "location": "config",
+      "relPath": "wget/wgetrc",
+      "relocation": {
+        "kind": "symlink",
+        "note": "set WGETRC to make wget use the new path directly"
+      }
+    }
+  ]
+}

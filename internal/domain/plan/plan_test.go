@@ -27,7 +27,7 @@ var _ = Describe("Claim", func() {
 			entries := []Entry{{Path: "/home/dwr/.gitconfig"}}
 
 			// When claiming the entries
-			survey, err := Claim(entries, baseDirs)
+			survey, err := Claim(entries, ruleTable(), baseDirs)
 
 			// Then the rule that claims it reports the entry and its target
 			Expect(err).NotTo(HaveOccurred())
@@ -40,23 +40,25 @@ var _ = Describe("Claim", func() {
 						Target: "/home/dwr/.config/git/config",
 					},
 				},
+				unsupported: []rules.UnsupportedEntry{bashrcEntry()},
 			}, cmp.AllowUnexported(Survey{})))
 		})
 	})
 
 	Context("when no rule claims an entry in home", func() {
-		It("should produce no candidate for it", func() {
+		It("should produce no candidate", func() {
 			// Given an entry in home that no rule claims
-			entries := []Entry{{Path: "/home/dwr/.unclaimed"}}
+			entries := []Entry{{Path: "/home/dwr/.bashrc"}}
 
 			// When claiming the entries
-			survey, err := Claim(entries, baseDirs)
+			survey, err := Claim(entries, ruleTable(), baseDirs)
 
 			// Then there is nothing to relocate
 			Expect(err).NotTo(HaveOccurred())
 			Expect(survey).To(BeComparableTo(Survey{
-				entries:    entries,
-				candidates: []Candidate{},
+				entries:     entries,
+				candidates:  []Candidate{},
+				unsupported: []rules.UnsupportedEntry{bashrcEntry()},
 			}, cmp.AllowUnexported(Survey{})))
 		})
 	})
@@ -225,10 +227,13 @@ var _ = Describe("Build", func() {
 	Context("when an entry belongs to an app that cannot be relocated", func() {
 		It("should skip the entry and say what stands in the way", func() {
 			// Given an entry of an app that cannot be relocated at all
-			entries := []Entry{{Path: "/home/dwr/.bashrc"}}
+			survey := Survey{
+				entries:     []Entry{{Path: "/home/dwr/.bashrc"}},
+				unsupported: []rules.UnsupportedEntry{bashrcEntry()},
+			}
 
 			// When building the plan
-			actions := Build(Survey{entries: entries}, map[xdg.Target]TargetState{})
+			actions := Build(survey, map[xdg.Target]TargetState{})
 
 			// Then the entry stays where it is, stating the obstacle
 			Expect(actions).To(BeComparableTo(Plan{
@@ -285,6 +290,7 @@ var _ = Describe("Build", func() {
 						Target: "/home/dwr/.local/state/less/history",
 					},
 				},
+				unsupported: []rules.UnsupportedEntry{bashrcEntry()},
 			}
 			states := map[xdg.Target]TargetState{
 				"/home/dwr/.config/wget/wgetrc": TargetOccupied{},
@@ -412,6 +418,19 @@ func actionFields() cmp.Option {
 	)
 }
 
+// ruleTable contains a git rule and an unsupported .bashrc entry.
+func ruleTable() rules.Table {
+	GinkgoHelper()
+
+	table, err := rules.BuildTable(
+		[]rules.Rule{gitRule()},
+		[]rules.UnsupportedEntry{bashrcEntry()},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	return table
+}
+
 // gitRule returns the rule claiming .gitconfig, which relocates by moving.
 func gitRule() rules.Rule {
 	return rules.Rule{
@@ -446,5 +465,14 @@ func wgetRule() rules.Rule {
 		Relocation: rules.RelocationSymlink{
 			Note: "set WGETRC to make wget use the new path directly",
 		},
+	}
+}
+
+// bashrcEntry returns the unsupported entry naming .bashrc.
+func bashrcEntry() rules.UnsupportedEntry {
+	return rules.UnsupportedEntry{
+		App:       "bash",
+		EntryName: ".bashrc",
+		Obstacle:  "read from a fixed path before any variable applies",
 	}
 }

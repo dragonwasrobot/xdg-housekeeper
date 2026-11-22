@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/plan"
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/rules"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
 )
 
@@ -372,10 +373,63 @@ func actionsFor(
 ) plan.Plan {
 	GinkgoHelper()
 
-	survey, err := plan.Claim(entries, baseDirs)
+	survey, err := plan.Claim(entries, ruleTable(), baseDirs)
 	Expect(err).NotTo(HaveOccurred())
 
 	return plan.Build(survey, states)
+}
+
+// ruleTable returns the rule table the specs plan against: a move rule for
+// git, symlink rules for less and wget, and the two entries bash keeps in
+// place.
+func ruleTable() rules.Table {
+	GinkgoHelper()
+
+	table, err := rules.BuildTable(
+		[]rules.Rule{
+			{
+				App:        "git",
+				EntryName:  ".gitconfig",
+				Location:   xdg.LocationConfig,
+				RelPath:    "git/config",
+				Relocation: rules.RelocationMove{},
+			},
+			{
+				App:       "less",
+				EntryName: ".lesshst",
+				Location:  xdg.LocationState,
+				RelPath:   "less/history",
+				Relocation: rules.RelocationSymlink{
+					Note: "set LESSHISTFILE to make less use the new path " +
+						"directly",
+				},
+			},
+			{
+				App:       "wget",
+				EntryName: ".wgetrc",
+				Location:  xdg.LocationConfig,
+				RelPath:   "wget/wgetrc",
+				Relocation: rules.RelocationSymlink{
+					Note: "set WGETRC to make wget use the new path directly",
+				},
+			},
+		},
+		[]rules.UnsupportedEntry{
+			{
+				App:       "bash",
+				EntryName: ".bashrc",
+				Obstacle:  "read from a fixed path before any variable applies",
+			},
+			{
+				App:       "bash",
+				EntryName: ".bash_profile",
+				Obstacle:  "read from a fixed path before any variable applies",
+			},
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	return table
 }
 
 // relocationOf returns the relocation the plan holds for the entry at

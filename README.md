@@ -177,6 +177,59 @@ One app can't be moved at all, so its dotfiles are skipped as *unsupported*:
 |------|----------------------------|----------------------------------------------------|
 | bash | `.bashrc`, `.bash_profile` | read from a fixed path before any variable applies |
 
+## Adding an app
+
+Each supported app is one JSON file in [`apps/`](apps/), built into the
+binary. To add one, write a file named after the app's command:
+
+```json
+{
+  "app": "wget",
+  "rules": [
+    {
+      "entryName": ".wgetrc",
+      "location": "config",
+      "relPath": "wget/wgetrc",
+      "relocation": {
+        "kind": "symlink",
+        "note": "set WGETRC to make wget use the new path directly"
+      }
+    }
+  ]
+}
+```
+
+- `entryName` is the dotfile or folder in your home directory.
+- `location` is the XDG base directory it belongs in: `config`, `data`,
+  `state` or `cache`.
+- `relPath` is where it goes inside that directory, and must stay inside it.
+- `relocation` is a `move` when the app already reads the new path, and a
+  `symlink` otherwise. A symlink can carry a `note` saying how to make the link
+  unnecessary, i.e. by setting environment variables; a move can't.
+
+An app whose dotfiles can't be moved lists them under `unsupported` instead,
+each with what keeps it in place:
+
+```json
+{
+  "app": "bash",
+  "unsupported": [
+    {
+      "entryName": ".bashrc",
+      "obstacle": "read from a fixed path before any variable applies"
+    }
+  ]
+}
+```
+
+Keys match regardless of case, so `EntryName` reads as `entryName`, and a key
+given twice keeps its last value. Write each key once, spelled as shown.
+
+Then add the app to the tables above and run `go test ./...`. A file the tool
+can't read, a path leading outside its base directory, or a dotfile two apps
+claim fails the tests. The tool also refuses to run with any of them, though it
+only notices a bad path when that dotfile is in your home directory.
+
 ## Prior art
 
 This tool is not unique in trying to keep a clean `$HOME` directory. Other
