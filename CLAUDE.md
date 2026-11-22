@@ -17,20 +17,23 @@ of each one. Only what binds *before* a skill loads is stated here.
 
 ## Architecture
 
-Single binary, `package main` at the repo root. Everything else lives under
-`internal/`, split into a pure core and the adapters around it:
+Single binary, `package main` at the repo root. All other Go code lives under
+`internal/`, split into a pure core and the adapters around it; `apps/` holds
+the app files `main` embeds:
 
 ```
-main.go                 package main — flags, exit codes, wiring
+main.go                 package main    — flags, exit codes, wiring
+apps/                   one JSON file per app, embedded by main.go
 internal/
   domain/               the pure core: no I/O, no env, no clock
-    xdg/                package xdg    — XDG base-directory spec knowledge
-    rules/              package rules  — the rule table, and unsupported apps
-    plan/               package plan   — building a housekeeping plan
-  infra/                the adapters: argv, filesystem, terminal text
-    fsys/               package fsys   — traversing and moving files
-    cli/                package cli    — argv parsing
-    report/             package report — the plan and its outcomes, as text
+    xdg/                package xdg     — XDG base-directory spec knowledge
+    rules/              package rules   — the rule table and its invariants
+    plan/               package plan    — building a housekeeping plan
+  infra/                the adapters: argv, app files, filesystem, terminal text
+    catalog/            package catalog — the rule table, from app files
+    fsys/               package fsys    — traversing and moving files
+    cli/                package cli     — argv parsing
+    report/             package report  — the plan and its outcomes, as text
 ```
 
 An adapter translates between one outside format and the core's types, and
@@ -39,11 +42,11 @@ function that writes one stays in `main.go`. That splits the two `plan.Action`
 switches: `actionLines` renders, `applyAction` relocates.
 
 Directories carry the **layer**; package names carry the **concern**. So call
-sites read `plan.Claim(entries, baseDirs)` and `fsys.Traverse(home, baseDirs)`,
-never `domain.PlanCandidates(...)`. Add packages under a layer as concerns
-appear; never add a package named for a layer, a pattern, or a catch-all
-(`util`, `common`, `helpers`) — if a new package's one-concern sentence is
-hard to write, it shouldn't exist yet.
+sites read `plan.Claim(entries, table, baseDirs)` and
+`fsys.Traverse(home, baseDirs)`, never `domain.PlanCandidates(...)`. Add
+packages under a layer as concerns appear; never add a package named for a
+layer, a pattern, or a catch-all (`util`, `common`, `helpers`) — if a new
+package's one-concern sentence is hard to write, it shouldn't exist yet.
 
 Dependency direction is one-way: **an adapter may name a domain type; nothing
 under `internal/domain/` may import the world.** The core is pure by its own
@@ -122,7 +125,7 @@ reading the diff.
 
 - **Order parameters by relevance.** The value the function is fundamentally
   about leads; contextual criteria follow; injected config and clients trail:
-  `plan.Claim(entries, baseDirs)`. When two parameters both read as the
+  `plan.Claim(entries, table, baseDirs)`. When two parameters both read as the
   subject, ask which one could be frozen into the receiver and still leave a
   sensible operation: `b.In(location).Target(relPath)` reads, the reverse does
   not, so `location` is the criterion and trails. The one exception is
@@ -156,8 +159,8 @@ reading the diff.
   argument only when it has a second real implementation or is
   non-deterministic. `slog` is the deliberate exception — a cross-cutting
   singleton, called directly rather than threaded through signatures.
-- **No package-level mutable variables.** `var Err…` sentinels excepted;
-  `gochecknoglobals` enforces it.
+- **No package-level mutable variables.** `var Err…` sentinels and
+  `//go:embed` variables excepted; `gochecknoglobals` enforces it.
 - **Accept interfaces, return structs.** Declare an interface at the *consumer*,
   not beside the implementation, and give it only the methods that consumer
   calls — a one-method interface is the norm. Prefer an existing stdlib

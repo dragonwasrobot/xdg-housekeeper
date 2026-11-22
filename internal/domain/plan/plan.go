@@ -34,10 +34,11 @@ type Candidate struct {
 }
 
 // Survey is every entry found in home together with the candidates its rules
-// produced.
+// produced, and the unsupported entries that can't be relocated.
 type Survey struct {
-	entries    []Entry
-	candidates []Candidate
+	entries     []Entry
+	candidates  []Candidate
+	unsupported []rules.UnsupportedEntry
 }
 
 // Targets returns the target every candidate resolved to.
@@ -47,11 +48,13 @@ func (s Survey) Targets() []xdg.Target {
 	})
 }
 
-// Claim surveys the entries in home, pairing each with the candidate its rule
-// produced. An entry no rule claims yields no candidate but stays in the
-// survey, since the plan still has to account for it.
-func Claim(entries []Entry, baseDirs xdg.BaseDirs) (Survey, error) {
-	claimedBy := lo.KeyBy(rules.Rules(), func(rule rules.Rule) string {
+// Claim surveys the entries in home against the rule table, pairing each with
+// the candidate its rule produced. An entry no rule claims yields no candidate
+// but stays in the survey, since the plan still has to account for it.
+func Claim(
+	entries []Entry, table rules.Table, baseDirs xdg.BaseDirs,
+) (Survey, error) {
+	claimedBy := lo.KeyBy(table.Rules(), func(rule rules.Rule) string {
 		return rule.EntryName
 	})
 	candidates := make([]Candidate, 0, len(entries))
@@ -76,7 +79,11 @@ func Claim(entries []Entry, baseDirs xdg.BaseDirs) (Survey, error) {
 		})
 	}
 
-	return Survey{entries: entries, candidates: candidates}, nil
+	return Survey{
+		entries:     entries,
+		candidates:  candidates,
+		unsupported: table.UnsupportedEntries(),
+	}, nil
 }
 
 // Plan is the ordered set of actions covering every entry found in home.
@@ -331,9 +338,9 @@ func skips(survey Survey) []Action {
 		return candidate.Entry.Path
 	})
 
-	unsupportedEntries := lo.KeyBy(rules.UnsupportedEntries(),
+	unsupportedEntries := lo.KeyBy(survey.unsupported,
 		func(entry rules.UnsupportedEntry) string {
-			return entry.Name
+			return entry.EntryName
 		})
 
 	skipFor := func(entry Entry, _ int) (Action, bool) {

@@ -72,7 +72,7 @@ func TestXdg(t *testing.T) {
 
 `Fail` is Ginkgo's, `RegisterFailHandler` is Gomega's. The bootstrap goes in the
 package under test rather than an external `_test` package, because specs
-construct `BaseDirs{config: …}` and call unexported `rules()`.
+construct `BaseDirs{config: …}` and `Table{rules: …}` from unexported fields.
 
 **Table-driven tests are the exception, not the default.** The plain form above
 is what a new test looks like; a table is what one occasionally becomes — a
@@ -179,15 +179,24 @@ value: a `Survey` literal opens nearly every spec in `plan_test.go` and stays
 inline in each, because what fills it is what that spec is about.
 
 A fixture with structure is a function taking no arguments and returning the
-value whole. One that is a bare scalar is a `const` — `bashObstacle` — since
+value whole. One that is a bare scalar is a `const` — `gitAppFile` — since
 there is nothing for a body to assemble. A spec needing a variant binds the
 fixture and changes the one field that differs, so the deviation is what the
 reader sees:
 
 ```go
-// see internal/domain/plan/plan_test.go
-bogus := gitRule()
-bogus.Relocation = Relocation("bogus")
+// see internal/domain/rules/rules_test.go
+rival := gitRule()
+rival.App = "git-lfs"
+rival.RelPath = "git-lfs/config"
+```
+
+A `const` varies the same way, by swapping the one value that differs — in the
+`Load` table, each row supplies the `from` and `to` of its swap:
+
+```go
+// see internal/infra/catalog/catalog_test.go
+file := strings.Replace(gitAppFile, from, to, 1)
 ```
 
 What makes one spec differ from its neighbours stays inline. Entry paths,
@@ -196,24 +205,28 @@ constructor hiding those leaves the reader crossing the file to learn what is
 being asserted. The bar for extracting is repetition across specs, never length
 within one.
 
-A fixture belongs in an expectation as readily as in the setup — the `Claim`
-spec asserts `Rule: gitRule()` — as long as it is **pinned**: some spec already
-using it fails if the fixture drifts from what it copies. `gitRule()` restates a
-row of `rules()` and `Claim` consults that real table, so a changed row breaks
-the spec; `bashObstacle` is pinned the same way through `unsupportedApps()`. The
-`Rules` specs do not do that job — they assert invariants over whatever the
-table holds, never the values in it.
+A fixture belongs in an expectation as readily as in the setup — a `Load` spec
+expects `gitRule()` — as long as it is **pinned**: some spec already using it
+fails if the fixture drifts from what it copies. In `catalog_test.go`,
+`gitRule()` restates the rule `gitAppFile` declares, and the spec loading that
+file compares the two, so either one drifting breaks it.
 
-A fixture that copies nothing needs no pin. `lessRule()` and `wgetRule()` name
-rules `rules()` never declares, and every subject reaching them — `Build` by
-argument, `Targets` through its receiver — is handed its candidates by the spec
-rather than consulting the table. They are values a spec invents, with nothing
-to drift from.
+No fixture is kept in sync with the app files the tool ships in `apps/`. Where
+a fixture's values match a shipped file, as `ruleTable()`'s do, no spec depends
+on the match, so either can change alone. The spec over them in `main_test.go`
+asserts an invariant over whatever they hold, never the values in them.
 
-A fixture that copies a row and has no pin is the case to fix, not to document.
-Never add a spec comparing the fixture against the row: that pins the copy and
-covers no behavior. Either route a spec that uses it through the real table, or
-stop copying — invent a value and name it for what the spec needs.
+A fixture that copies nothing needs no pin. `gitRule()`, `lessRule()` and
+`wgetRule()` in `plan_test.go`, and `ruleTable()` in `report_test.go`, are
+handed to their subject by the spec — `Claim` through its table argument,
+`Build` through its survey — rather than read from shipped data. They are
+values a spec invents, with nothing to drift from.
+
+A fixture that copies shipped data and has no pin is the case to fix, not to
+document. Never add a spec comparing the fixture against the data: that pins
+the copy and covers no behavior. Either route a spec that uses it through the
+shipped data, or stop copying — invent a value and name it for what the spec
+needs.
 
 **Assertion shape.** Assert on whole values with `BeComparableTo`, which runs
 `github.com/google/go-cmp/cmp` underneath and reports its diff:
@@ -309,4 +322,9 @@ line instead of the helper's. For a pure function that only reads a filesystem,
   branch by another route. Red → Green already answers this for a spec written
   before its code, so the question is for one arriving after: an appended
   assertion, a folded row, a spec covering code that was already green. Break
-  the code on purpose and watch it go red.
+  the code on purpose with `scripts/mutation-test` and watch it go red; it
+  restores the file whatever the outcome, so never break it by hand:
+
+  ```sh
+  scripts/mutation-test FILE FROM TO PACKAGE FOCUS
+  ```

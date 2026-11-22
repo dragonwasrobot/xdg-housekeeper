@@ -10,7 +10,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/rules"
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/infra/catalog"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/infra/cli"
 )
 
@@ -378,6 +382,27 @@ var _ = Describe("run", func() {
 			Expect(stderr.String()).To(BeEmpty())
 			Expect(stdout.String()).To(BeComparableTo(cli.Usage()))
 		})
+	})
+})
+
+var _ = Describe("shippedApps", func() {
+	It("should specify only targets inside the base directories", func() {
+		// Given base directories resolved from a home directory
+		baseDirs, err := xdg.Resolve(xdg.Environment{Home: "/home/dwr"})
+		Expect(err).NotTo(HaveOccurred())
+
+		// When loading the rule table from the app files the tool ships with
+		loaded, err := catalog.Load(shippedApps())
+		Expect(err).NotTo(HaveOccurred())
+
+		// Then there are rules, each with a target inside its base directory
+		Expect(loaded.Rules()).NotTo(BeEmpty())
+
+		escapesBase := func(rule rules.Rule, _ int) bool {
+			_, err := baseDirs.Target(rule.RelPath, rule.Location)
+			return err != nil
+		}
+		Expect(lo.Filter(loaded.Rules(), escapesBase)).To(BeEmpty())
 	})
 })
 

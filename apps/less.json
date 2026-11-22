@@ -1,0 +1,14 @@
+{
+  "app": "less",
+  "rules": [
+    {
+      "entryName": ".lesshst",
+      "location": "state",
+      "relPath": "less/history",
+      "relocation": {
+        "kind": "symlink",
+        "note": "set LESSHISTFILE to make less use the new path directly"
+      }
+    }
+  ]
+}

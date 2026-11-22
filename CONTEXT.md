@@ -24,7 +24,8 @@ location:
 ## Domain Language
 
 The terms of the domain language are grouped relative to the different stages of
-a *run* of the `xdg-housekeeper` tool from start to finish.
+a *run* of the `xdg-housekeeper` tool from start to finish. The errors that stop
+a run come last, in a group of their own.
 
 ### Environment
 
@@ -95,6 +96,12 @@ there, or why they stay put.
 - **obstacle**: the reason an *unsupported entry* can't be relocated. `bash`,
   for example, reads `.bashrc` from a fixed path before any variable applies.
   The *report* shows it beside the skipped entry.
+- **rule table**: every *rule* together with every *unsupported entry*, read
+  from the *app files* when a run starts. No *entry* is claimed twice in it,
+  and no rule claims an unsupported entry.
+- **app file**: one JSON file declaring an *app*'s *rules* and *unsupported
+  entries*. The tool ships one per app, built into the binary, and reads them
+  all into the *rule table*.
 
 ### Targets
 
@@ -102,10 +109,6 @@ Where the tool should relocate an entry to, and what might be in the way.
 
 - **target**: the absolute path an *entry* would be relocated to, worked out
   from the *rule* that claims it.
-- **invalid target**: the error when a *rule*'s path can't produce a
-  *target*, because the path is absolute or leads outside the rule's *base
-  directory*. It means the rule table is wrong, so it fails the run instead
-  of skipping the entry.
 - **probe**: to check the filesystem at a *target* and along its parent
   directories, for anything that would stop an *entry* being relocated
   there. The result is the target's *target state*.
@@ -127,7 +130,8 @@ What the tool will do with each entry.
   entry's *target*. There is a candidate only for an entry actually in
   *home*.
 - **survey**: every *entry* found in *home*, including the ones no rule
-  claims, together with the *candidates* built from their *rules*.
+  claims, together with the *candidates* built from their *rules* and the
+  *unsupported entries* the unclaimed ones are checked against.
 - **plan**: one *action* for every *entry* in *home*, all worked out before
   any action is carried out. The same home always gives the same plan:
   actions are sorted by *app* name, then by entry, with the entries no app
@@ -178,3 +182,26 @@ What the tool reports to the user, and what the plan carries out.
     `plan` command.
   - *asked*: asked of the user once the listing is shown. The `apply` command.
   - *given*: given up front by the `--yes` flag, so the run never asks.
+
+### Errors
+
+What stops a *run* before it carries out any *action*. Each means the *rule
+table*, or an *app file* it is read from, is wrong, so the run fails instead
+of skipping the declaration at fault.
+
+- **malformed app file**: the error when an *app file* is not a JSON document in
+  the app file format, such as one carrying a key the format does not define.
+- **missing app**: the error when an *app file* does not name the *app* its
+  declarations belong to.
+- **unknown location**: the error when an *app file* names a *location* the XDG
+  specification does not define.
+- **unknown relocation**: the error when an *app file* names a *relocation*
+  other than a *move* or a *symlink*.
+- **note on a move**: the error when an *app file* gives a *move* a *note*,
+  which only a *symlink* carries.
+- **duplicate claim**: the error when two *rules* claim the same *entry*.
+- **claimed unsupported entry**: the error when a *rule* claims an entry that
+  is also an *unsupported entry*.
+- **invalid target**: the error when a *rule*'s path can't produce a
+  *target*, because the path is absolute or leads outside the rule's *base
+  directory*. A run only finds it for a rule whose *entry* is in *home*.

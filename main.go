@@ -4,9 +4,11 @@ package main
 
 import (
 	"bufio"
+	"embed"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strings"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/plan"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/domain/xdg"
+	"github.com/dragonwasrobot/xdg-housekeeper/internal/infra/catalog"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/infra/cli"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/infra/fsys"
 	"github.com/dragonwasrobot/xdg-housekeeper/internal/infra/report"
@@ -33,6 +36,11 @@ const (
 	// its plan, so nothing on disk was touched at all.
 	exitNotStarted = 2
 )
+
+// appFiles holds the app files the tool ships with, under apps/.
+//
+//go:embed apps/*.json
+var appFiles embed.FS
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -266,15 +274,21 @@ func environment(home string) xdg.Environment {
 	}
 }
 
-// buildPlan surveys the entries in home and derives the action each one calls
-// for, probing what stands in the way of their targets in between.
+// buildPlan surveys the entries in home against the rule table the tool ships
+// with, and derives the action each one calls for, probing what stands in the
+// way of their targets in between.
 func buildPlan(home string, baseDirs xdg.BaseDirs) (plan.Plan, error) {
+	table, err := catalog.Load(shippedApps())
+	if err != nil {
+		return nil, fmt.Errorf("load rule table: %w", err)
+	}
+
 	entries, err := fsys.Traverse(home, baseDirs)
 	if err != nil {
 		return nil, err
 	}
 
-	survey, err := plan.Claim(entries, baseDirs)
+	survey, err := plan.Claim(entries, table, baseDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +299,20 @@ func buildPlan(home string, baseDirs xdg.BaseDirs) (plan.Plan, error) {
 	}
 
 	return plan.Build(survey, states), nil
+}
+
+// shippedApps returns the directory of app files the tool ships with.
+func shippedApps() fs.FS {
+	// appsDir is the directory appFiles holds the app files under.
+	const appsDir = "apps"
+
+	apps, err := fs.Sub(appFiles, appsDir)
+	if err != nil {
+		// Sub fails only on an invalid path, and this one is fixed.
+		panic(fmt.Sprintf("sub %q: %v", appsDir, err))
+	}
+
+	return apps
 }
 
 // writeOut writes user-facing text to the stream a run reports on.

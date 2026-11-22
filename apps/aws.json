@@ -1,0 +1,14 @@
+{
+  "app": "aws",
+  "rules": [
+    {
+      "entryName": ".aws",
+      "location": "config",
+      "relPath": "aws",
+      "relocation": {
+        "kind": "symlink",
+        "note": "set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to make aws use the new paths directly"
+      }
+    }
+  ]
+}
